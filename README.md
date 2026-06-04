@@ -134,9 +134,12 @@ Register the endpoint after deployment:
 ```bash
 export CLEARLEDGER_REGISTER_URL='https://api.clearledger.org/v1/approved-buyers'
 export CLEARLEDGER_API_KEY='...'
-export BIDDER_PUBLIC_ENDPOINT='https://agency-bidder.example.com/openrtb'
+export BIDDER_PUBLIC_ENDPOINT='https://agency-bidder.example.com'
+export BIDDER_OPENRTB_ENDPOINT='https://agency-bidder.example.com/openrtb'
 go run ./cmd/bidder -config config/campaigns.sample.json -register
 ```
+
+`BIDDER_PUBLIC_ENDPOINT` is the public base URL used for generated notice URLs such as `/events/imp`. `BIDDER_OPENRTB_ENDPOINT` is the exact endpoint ClearLedger should call for bid requests. If `BIDDER_OPENRTB_ENDPOINT` is omitted, registration derives it as `<BIDDER_PUBLIC_ENDPOINT>/openrtb`.
 
 ## Endpoint Certification
 

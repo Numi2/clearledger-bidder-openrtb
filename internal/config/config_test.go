@@ -46,6 +46,32 @@ func TestLoadHTTPRuntimeEnvOverrides(t *testing.T) {
 	}
 }
 
+func TestRegistrationEndpointDerivation(t *testing.T) {
+	cfg := Config{PublicEndpoint: "https://agency-bidder.example.com"}
+	if got := cfg.RegistrationEndpoint(); got != "https://agency-bidder.example.com/openrtb" {
+		t.Fatalf("endpoint=%s", got)
+	}
+	cfg.PublicEndpoint = "https://agency-bidder.example.com/openrtb"
+	if got := cfg.RegistrationEndpoint(); got != "https://agency-bidder.example.com/openrtb" {
+		t.Fatalf("endpoint=%s", got)
+	}
+	cfg.OpenRTBEndpoint = "https://rtb.example.com/buyers/agency/openrtb/"
+	if got := cfg.RegistrationEndpoint(); got != "https://rtb.example.com/buyers/agency/openrtb" {
+		t.Fatalf("endpoint=%s", got)
+	}
+}
+
+func TestLoadOpenRTBEndpointEnvOverride(t *testing.T) {
+	t.Setenv("BIDDER_OPENRTB_ENDPOINT", "https://rtb.example.com/openrtb")
+	cfg, err := Load("../../config/campaigns.sample.json")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if cfg.OpenRTBEndpoint != "https://rtb.example.com/openrtb" {
+		t.Fatalf("unexpected openrtb endpoint: %s", cfg.OpenRTBEndpoint)
+	}
+}
+
 func TestValidateCampaignRejectsCreativeOutsideMediaTypes(t *testing.T) {
 	err := validateCampaign(Campaign{
 		ID:          "campaign",

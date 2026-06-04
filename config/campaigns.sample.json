@@ -1,5 +1,6 @@
 {
   "public_endpoint": "http://localhost:8080",
+  "openrtb_endpoint": "http://localhost:8080/openrtb",
   "buyer_id": "agency_bidder_1",
   "seat": "agency_seat_1",
   "currency": "USD",

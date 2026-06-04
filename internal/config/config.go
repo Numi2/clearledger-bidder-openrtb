@@ -12,6 +12,7 @@ import (
 type Config struct {
 	Port                   string     `json:"-"`
 	PublicEndpoint         string     `json:"public_endpoint"`
+	OpenRTBEndpoint        string     `json:"openrtb_endpoint,omitempty"`
 	BuyerID                string     `json:"buyer_id"`
 	Seat                   string     `json:"seat"`
 	Currency               string     `json:"currency"`
@@ -80,6 +81,7 @@ func Load(path string) (Config, error) {
 	}
 	cfg.Port = getenv("PORT", "8080")
 	cfg.PublicEndpoint = getenv("BIDDER_PUBLIC_ENDPOINT", cfg.PublicEndpoint)
+	cfg.OpenRTBEndpoint = getenv("BIDDER_OPENRTB_ENDPOINT", cfg.OpenRTBEndpoint)
 	cfg.BuyerID = getenv("BIDDER_BUYER_ID", first(cfg.BuyerID, "clearledger_bidder_openrtb"))
 	cfg.Seat = getenv("BIDDER_SEAT", first(cfg.Seat, "agency_seat_1"))
 	cfg.Currency = strings.ToUpper(getenv("BIDDER_CURRENCY", first(cfg.Currency, "USD")))
@@ -280,6 +282,20 @@ func positiveIntEnv(key string, fallback int) int {
 
 func (c Config) SignatureSkewDuration() time.Duration {
 	return time.Duration(c.SignatureSkew) * time.Second
+}
+
+func (c Config) RegistrationEndpoint() string {
+	if strings.TrimSpace(c.OpenRTBEndpoint) != "" {
+		return strings.TrimRight(strings.TrimSpace(c.OpenRTBEndpoint), "/")
+	}
+	base := strings.TrimRight(strings.TrimSpace(c.PublicEndpoint), "/")
+	if base == "" {
+		return ""
+	}
+	if strings.HasSuffix(base, "/openrtb") {
+		return base
+	}
+	return base + "/openrtb"
 }
 
 func (c Config) ReadHeaderTimeout() time.Duration {
