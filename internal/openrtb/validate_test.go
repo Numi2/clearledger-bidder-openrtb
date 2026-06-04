@@ -140,6 +140,102 @@ func TestValidateBidResponseRequiresNoticeOrProofExt(t *testing.T) {
 	}
 }
 
+func TestValidateBidResponseRejectsNonPositivePrice(t *testing.T) {
+	req := &BidRequest{
+		ID:   "auction",
+		Cur:  []string{"USD"},
+		Site: &Site{Domain: "example.com"},
+		Imp:  []Impression{{ID: "1", BidFloor: 0, Banner: &Banner{W: 300, H: 250}}},
+	}
+	resp := &BidResponse{
+		ID:  "auction",
+		Cur: "USD",
+		SeatBid: []SeatBid{{
+			Seat: "seat",
+			Bid: []Bid{{
+				ID:      "bid",
+				ImpID:   "1",
+				Price:   0,
+				CrID:    "creative",
+				Adomain: []string{"advertiser.com"},
+				AdM:     `<img src="https://cdn.example/ad.png">`,
+				NURL:    "https://bidder.example/win",
+			}},
+		}},
+	}
+	if err := ValidateBidResponse(req, resp); err == nil {
+		t.Fatal("expected non-positive price rejection")
+	}
+	resp.SeatBid[0].Bid[0].Price = 0.01
+	if err := ValidateBidResponse(req, resp); err != nil {
+		t.Fatal(err)
+	}
+}
+
+func TestValidateBidResponseRejectsBlankAdomain(t *testing.T) {
+	req := &BidRequest{
+		ID:   "auction",
+		Cur:  []string{"USD"},
+		Site: &Site{Domain: "example.com"},
+		Imp:  []Impression{{ID: "1", BidFloor: 1, Banner: &Banner{W: 300, H: 250}}},
+	}
+	resp := &BidResponse{
+		ID:  "auction",
+		Cur: "USD",
+		SeatBid: []SeatBid{{
+			Seat: "seat",
+			Bid: []Bid{{
+				ID:      "bid",
+				ImpID:   "1",
+				Price:   1,
+				CrID:    "creative",
+				Adomain: []string{" "},
+				AdM:     `<img src="https://cdn.example/ad.png">`,
+				NURL:    "https://bidder.example/win",
+			}},
+		}},
+	}
+	if err := ValidateBidResponse(req, resp); err == nil {
+		t.Fatal("expected blank adomain rejection")
+	}
+	resp.SeatBid[0].Bid[0].Adomain = []string{"advertiser.com"}
+	if err := ValidateBidResponse(req, resp); err != nil {
+		t.Fatal(err)
+	}
+}
+
+func TestValidateBidResponseRejectsInvalidNoticeURLs(t *testing.T) {
+	req := &BidRequest{
+		ID:   "auction",
+		Cur:  []string{"USD"},
+		Site: &Site{Domain: "example.com"},
+		Imp:  []Impression{{ID: "1", BidFloor: 1, Banner: &Banner{W: 300, H: 250}}},
+	}
+	resp := &BidResponse{
+		ID:  "auction",
+		Cur: "USD",
+		SeatBid: []SeatBid{{
+			Seat: "seat",
+			Bid: []Bid{{
+				ID:      "bid",
+				ImpID:   "1",
+				Price:   1,
+				CrID:    "creative",
+				Adomain: []string{"advertiser.com"},
+				AdM:     `<img src="https://cdn.example/ad.png">`,
+				NURL:    "javascript:alert(1)",
+			}},
+		}},
+	}
+	if err := ValidateBidResponse(req, resp); err == nil {
+		t.Fatal("expected invalid notice URL rejection")
+	}
+	resp.SeatBid[0].Bid[0].NURL = "https://bidder.example/win"
+	if err := ValidateBidResponse(req, resp); err != nil {
+		t.Fatal(err)
+	}
+}
+
 func TestValidateBidResponseRejectsEmptyAndDuplicateBids(t *testing.T) {
 	req := &BidRequest{
 		ID:   "auction",

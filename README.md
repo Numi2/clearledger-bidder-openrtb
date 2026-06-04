@@ -35,11 +35,11 @@ Bid responses include:
 
 - response `id` matching the request
 - `seatbid[].seat`
-- `bid.id`, `bid.impid`, `bid.price`, `bid.crid`, `bid.adomain`
+- `bid.id`, matching `bid.impid`, positive CPM `bid.price`, `bid.crid`, and non-empty `bid.adomain` entries
 - non-empty `seatbid[].bid`, unique `bid.id`, and at most one bid per impression in a single response
 - `bid.dealid` matching the bid's own impression Deal ID for PMP inventory
 - `bid.adm` containing VAST for video/audio, display markup for banner, or OpenRTB native response JSON for native
-- `nurl`, `burl`, `lurl` notice URLs
+- optional `nurl`, `burl`, `lurl` notice URLs, which must be absolute `http` or `https` URLs when present
 - `bid.ext.clearledger` with buyer/campaign/creative identifiers plus echoed ClearLedger lane/package/placement/proof fields when present in `imp.ext.clearledger`
 
 When `imp.ext.clearledger.receipt_required` is true, the validator requires `bid.ext.clearledger` to include buyer, campaign, and creative IDs and to echo any ClearLedger lane/package/placement/proof fields from the request.

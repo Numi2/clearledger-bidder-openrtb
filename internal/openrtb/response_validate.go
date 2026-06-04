@@ -5,6 +5,7 @@ import (
 	"encoding/xml"
 	"fmt"
 	"io"
+	"net/url"
 	"strconv"
 	"strings"
 )
@@ -64,11 +65,14 @@ func ValidateBidResponse(req *BidRequest, resp *BidResponse) error {
 			if _, ok := impIDs[bid.ImpID]; !ok {
 				return fmt.Errorf("bid impid %q does not match request", bid.ImpID)
 			}
+			if bid.Price <= 0 {
+				return fmt.Errorf("bid price must be positive")
+			}
 			if bid.Price < floors[bid.ImpID] {
 				return fmt.Errorf("bid price below floor")
 			}
-			if len(bid.Adomain) == 0 {
-				return fmt.Errorf("adomain is required")
+			if err := validateAdomain(bid.Adomain); err != nil {
+				return err
 			}
 			if bid.AdM == "" {
 				return fmt.Errorf("adm is required")
@@ -82,6 +86,9 @@ func ValidateBidResponse(req *BidRequest, resp *BidResponse) error {
 			if bid.NURL == "" && bid.BURL == "" && bid.LURL == "" && !hasClearLedgerExt(bid.Ext) {
 				return fmt.Errorf("bid requires notice URLs or ext.clearledger proof fields")
 			}
+			if err := validateNoticeURLs(bid); err != nil {
+				return err
+			}
 			if err := validateClearLedgerProofExt(impIDs[bid.ImpID], bid); err != nil {
 				return err
 			}
@@ -93,6 +100,42 @@ func ValidateBidResponse(req *BidRequest, resp *BidResponse) error {
 					return fmt.Errorf("bid dealid does not match request impression")
 				}
 			}
+		}
+	}
+	return nil
+}
+
+func validateAdomain(adomain []string) error {
+	if len(adomain) == 0 {
+		return fmt.Errorf("adomain is required")
+	}
+	for _, domain := range adomain {
+		if strings.TrimSpace(domain) == "" {
+			return fmt.Errorf("adomain entries must be non-empty")
+		}
+	}
+	return nil
+}
+
+func validateNoticeURLs(bid Bid) error {
+	for _, notice := range []struct {
+		name  string
+		value string
+	}{
+		{name: "nurl", value: bid.NURL},
+		{name: "burl", value: bid.BURL},
+		{name: "lurl", value: bid.LURL},
+	} {
+		raw := strings.TrimSpace(notice.value)
+		if raw == "" {
+			continue
+		}
+		parsed, err := url.Parse(raw)
+		if err != nil || parsed.Scheme == "" || parsed.Host == "" {
+			return fmt.Errorf("bid %s must be an absolute URL", notice.name)
+		}
+		if parsed.Scheme != "http" && parsed.Scheme != "https" {
+			return fmt.Errorf("bid %s must use http or https", notice.name)
 		}
 	}
 	return nil
