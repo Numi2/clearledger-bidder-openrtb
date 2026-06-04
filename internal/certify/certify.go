@@ -22,6 +22,8 @@ type Options struct {
 	Endpoint      string
 	Token         string
 	SigningSecret string
+	BuyerID       string
+	SeatID        string
 	SamplePath    string
 	SamplePaths   []string
 	Timeout       time.Duration
@@ -147,6 +149,12 @@ func postOpenRTB(ctx context.Context, client *http.Client, options Options, body
 	req.Header.Set("Content-Type", "application/json")
 	req.Header.Set("Accept", "application/json")
 	req.Header.Set("X-OpenRTB-Version", "2.6")
+	if strings.TrimSpace(options.BuyerID) != "" {
+		req.Header.Set("X-ClearLedger-Buyer-ID", strings.TrimSpace(options.BuyerID))
+	}
+	if strings.TrimSpace(options.SeatID) != "" {
+		req.Header.Set("X-ClearLedger-Seat-ID", strings.TrimSpace(options.SeatID))
+	}
 	if options.Token != "" {
 		req.Header.Set("Authorization", "Bearer "+strings.TrimPrefix(options.Token, "Bearer "))
 	}

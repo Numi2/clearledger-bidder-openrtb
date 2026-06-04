@@ -16,9 +16,11 @@ func main() {
 	var options certify.Options
 	var timeoutMS int
 	var samples string
-	flag.StringVar(&options.Endpoint, "endpoint", os.Getenv("BIDDER_PUBLIC_ENDPOINT"), "OpenRTB endpoint to certify")
+	flag.StringVar(&options.Endpoint, "endpoint", defaultEndpoint(), "OpenRTB endpoint to certify")
 	flag.StringVar(&options.Token, "token", os.Getenv("BIDDER_OPENRTB_AUTH_TOKEN"), "Bearer token")
 	flag.StringVar(&options.SigningSecret, "signing-secret", os.Getenv("BIDDER_OPENRTB_SIGNING_SECRET"), "HMAC signing secret")
+	flag.StringVar(&options.BuyerID, "buyer-id", os.Getenv("BIDDER_BUYER_ID"), "ClearLedger buyer id header to certify")
+	flag.StringVar(&options.SeatID, "seat-id", os.Getenv("BIDDER_SEAT"), "ClearLedger seat id header to certify")
 	flag.StringVar(&samples, "samples", "", "comma-separated OpenRTB sample request paths")
 	flag.StringVar(&options.SamplePath, "sample", "", "single OpenRTB request path")
 	flag.IntVar(&timeoutMS, "timeout-ms", 2000, "HTTP timeout per certification request")
@@ -43,4 +45,18 @@ func main() {
 	if !report.OK {
 		os.Exit(1)
 	}
+}
+
+func defaultEndpoint() string {
+	if value := strings.TrimSpace(os.Getenv("BIDDER_OPENRTB_ENDPOINT")); value != "" {
+		return value
+	}
+	value := strings.TrimRight(strings.TrimSpace(os.Getenv("BIDDER_PUBLIC_ENDPOINT")), "/")
+	if value == "" {
+		return ""
+	}
+	if strings.HasSuffix(value, "/openrtb") {
+		return value
+	}
+	return value + "/openrtb"
 }

@@ -148,11 +148,13 @@ Run the certification harness against a deployed endpoint before asking ClearLed
 ```bash
 go run ./cmd/certify \
   -endpoint https://agency-bidder.example.com/openrtb \
+  -buyer-id agency_bidder_1 \
+  -seat-id agency_seat_1 \
   -token "$BIDDER_OPENRTB_AUTH_TOKEN" \
   -signing-secret "$BIDDER_OPENRTB_SIGNING_SECRET"
 ```
 
-The harness checks readiness, production ClearLedger signature headers, valid bid response shape for video, audio, display, and native samples, controlled no-bid, malformed request rejection, and OpenRTB bid-response validation including VAST MIME, duration, and dimension constraints.
+The harness checks readiness, production ClearLedger identity/signature headers, valid bid response shape for video, audio, display, and native samples, controlled no-bid, malformed request rejection, and OpenRTB bid-response validation including VAST MIME, duration, and dimension constraints.
 
 Run one sample only when debugging a specific format:
 
