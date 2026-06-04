@@ -157,7 +157,7 @@ go run ./cmd/certify \
 
 ## ClearLedger Lane Harness
 
-For local end-to-end compatibility without private ClearLedger services, run the ClearLedger-side harness. It reads `samples/clearledger-runtime-manifest.local.json`, enforces the active lane and approved buyer route, signs OpenRTB fanout, classifies each buyer as bid/no-bid/invalid/error, validates bid responses, selects the highest valid bid, builds the VAST/adm supply response, and emits proof steps showing that delivery tracking, billing, settlement, publisher net, ClearLedger fee, and final receipts stay outside the bidder.
+For local end-to-end compatibility without private ClearLedger services, run the ClearLedger-side harness. It reads `samples/clearledger-runtime-manifest.local.json`, enforces the active lane and approved buyer route, skips buyers whose protocol or allowed formats do not match the request, applies each buyer's manifest timeout, signs OpenRTB fanout, classifies each buyer as skipped/bid/no-bid/invalid/error, validates bid responses, selects the highest valid bid, builds the VAST/adm supply response, and emits proof steps showing that delivery tracking, billing, settlement, publisher net, ClearLedger fee, and final receipts stay outside the bidder.
 
 ```bash
 export BIDDER_OPENRTB_AUTH_TOKEN='token'
@@ -187,6 +187,8 @@ This does not require a bidder website. The open-source bidder is an HTTP servic
 5. Submit the approved-buyer registration payload to ClearLedger.
 6. ClearLedger publishes the approved buyer in the Redis runtime manifest and starts signed OpenRTB fanout.
 7. Monitor `/readyz`, `/metrics`, `/statez`, and notice callback counts while ClearLedger owns delivery proof, billable events, settlement, publisher net, fee computation, payout workflow, and final receipts.
+
+If you want ClearLedger to configure this bidder for your campaigns, rules, creatives, and buying workflow, contact your success representative or Tony, CEO of ClearLedger, at `tony@clearledger.org` or `+1 (832) 696-9666`.
 
 ## Compose
 

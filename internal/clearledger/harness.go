@@ -77,6 +77,8 @@ type BuyerResult struct {
 	BidID      string  `json:"bid_id,omitempty"`
 	Price      float64 `json:"price,omitempty"`
 	CrID       string  `json:"crid,omitempty"`
+	TimeoutMS  int     `json:"timeout_ms,omitempty"`
+	QPSLimit   float64 `json:"qps_limit,omitempty"`
 }
 
 type SupplyResponse struct {
@@ -156,10 +158,20 @@ func RunHarness(ctx context.Context, options HarnessOptions) (Report, error) {
 	candidates := []candidate{}
 	for _, buyer := range buyers {
 		result := BuyerResult{
-			BuyerID:  buyer.BuyerID,
-			SeatID:   buyer.SeatID,
-			Endpoint: endpointForBuyer(buyer, options),
+			BuyerID:   buyer.BuyerID,
+			SeatID:    buyer.SeatID,
+			Endpoint:  endpointForBuyer(buyer, options),
+			TimeoutMS: buyer.TimeoutMS,
+			QPSLimit:  buyer.QPSLimit,
 		}
+		if reason := enforceBuyerRoute(lane, buyer, req); reason != "" {
+			result.Outcome = "skipped"
+			result.Reason = reason
+			report.BuyerResults = append(report.BuyerResults, result)
+			add("buyer_route_"+buyer.BuyerID, true, reason)
+			continue
+		}
+		add("buyer_route_"+buyer.BuyerID, true, "eligible")
 		resp, status, latency, err := callBuyer(ctx, client, buyer, options, lane, req, raw)
 		result.HTTPStatus = status
 		result.LatencyMS = roundLatency(latency)
@@ -276,7 +288,9 @@ func applyLaneToRequest(req *openrtb.BidRequest, lane Lane) {
 	imp.Ext["clearledger"] = map[string]any{
 		"lane_id":           lane.LaneID,
 		"private_market_id": lane.PrivateMarketID,
+		"package_id":        packageID(lane),
 		"placement_id":      imp.TagID,
+		"proof_run_id":      stableID("proof", lane.LaneID, lane.PrivateMarketID, req.ID),
 		"receipt_required":  true,
 	}
 }
@@ -304,8 +318,31 @@ func enforceLaneRequest(lane Lane, req openrtb.BidRequest) string {
 	return ""
 }
 
+func enforceBuyerRoute(lane Lane, buyer ApprovedBuyer, req openrtb.BidRequest) string {
+	protocol := strings.TrimSpace(buyer.BidProtocol)
+	if protocol != "" && !strings.EqualFold(protocol, "openrtb_json") && !strings.EqualFold(protocol, "openrtb") {
+		return "unsupported_bid_protocol"
+	}
+	if len(req.Imp) == 0 {
+		return "missing_imp"
+	}
+	mediaType := req.Imp[0].MediaType()
+	if len(buyer.AllowedFormats) > 0 && !contains(buyer.AllowedFormats, mediaType) && !(mediaType == "display" && contains(buyer.AllowedFormats, "banner")) {
+		return "buyer_format_not_allowed"
+	}
+	if len(lane.Formats) > 0 && !contains(lane.Formats, mediaType) && !(mediaType == "display" && contains(lane.Formats, "banner")) {
+		return "lane_format_not_allowed"
+	}
+	return ""
+}
+
 func callBuyer(ctx context.Context, client *http.Client, buyer ApprovedBuyer, options HarnessOptions, lane Lane, bidReq openrtb.BidRequest, raw []byte) (openrtb.BidResponse, int, time.Duration, error) {
 	endpoint := endpointForBuyer(buyer, options)
+	if timeout := buyerTimeout(options.Timeout, buyer.TimeoutMS); timeout > 0 {
+		var cancel context.CancelFunc
+		ctx, cancel = context.WithTimeout(ctx, timeout)
+		defer cancel()
+	}
 	httpReq, err := http.NewRequestWithContext(ctx, http.MethodPost, endpoint, bytes.NewReader(raw))
 	if err != nil {
 		return openrtb.BidResponse{}, 0, 0, err
@@ -441,6 +478,27 @@ func dealID(lane Lane) string {
 		}
 	}
 	return ""
+}
+
+func packageID(lane Lane) string {
+	if lane.Metadata == nil {
+		return ""
+	}
+	if value, ok := lane.Metadata["package_id"].(string); ok {
+		return strings.TrimSpace(value)
+	}
+	return ""
+}
+
+func buyerTimeout(defaultTimeout time.Duration, timeoutMS int) time.Duration {
+	if timeoutMS <= 0 {
+		return defaultTimeout
+	}
+	timeout := time.Duration(timeoutMS) * time.Millisecond
+	if defaultTimeout <= 0 || timeout < defaultTimeout {
+		return timeout
+	}
+	return defaultTimeout
 }
 
 func secret(override, envName, inline string) string {

@@ -70,10 +70,11 @@ ClearLedger operator:
 2. Finds an active lane and selected approved buyer.
 3. Applies lane floor, placement, app bundle, Deal ID, and proof extensions to the OpenRTB request.
 4. Signs the buyer request with the production `X-ClearLedger-Buyer-*` headers.
-5. Classifies every approved buyer response as bid, no-bid, invalid bid, HTTP error, or transport error.
-6. Validates response id, seat, impid, price/floor, currency, crid, adomain, dealid, media-appropriate VAST/display/native `adm`, VAST MIME/duration/dimension constraints, and notice/proof fields.
-7. Selects the highest valid bid and builds the supply VAST/adm response.
-8. Emits delivery proof and proof steps marking delivery tracking, evidence archive, billing, settlement, publisher net, ClearLedger fee, and final receipt authority as ClearLedger-owned and outside the bidder.
+5. Enforces each approved buyer's route constraints, including OpenRTB protocol, allowed formats, and buyer timeout from the runtime manifest.
+6. Classifies every approved buyer as skipped, bid, no-bid, invalid bid, HTTP error, timeout, or transport error.
+7. Validates response id, seat, impid, price/floor, currency, crid, adomain, dealid, media-appropriate VAST/display/native `adm`, VAST MIME/duration/dimension constraints, and notice/proof fields.
+8. Selects the highest valid bid and builds the supply VAST/adm response.
+9. Emits delivery proof and proof steps marking delivery tracking, evidence archive, billing, settlement, publisher net, ClearLedger fee, and final receipt authority as ClearLedger-owned and outside the bidder.
 
 Example:
 
