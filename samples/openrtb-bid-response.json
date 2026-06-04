@@ -15,15 +15,20 @@
           "adomain": ["advertiser.com"],
           "dealid": "deal_clearledger_123",
           "adm": "<VAST version=\"4.3\">...</VAST>",
-          "nurl": "https://agency-bidder.example.com/events/win?auction_id=auction_123&bid_id=bid_example",
-          "burl": "https://agency-bidder.example.com/events/bill?auction_id=auction_123&bid_id=bid_example",
-          "lurl": "https://agency-bidder.example.com/events/loss?auction_id=auction_123&bid_id=bid_example",
+          "nurl": "https://agency-bidder.example.com/events/win?auction_id=auction_123&bid_id=bid_example&buyer_id=agency_bidder_1&campaign_id=campaign_video_1&lane_id=lane_123&package_id=package_123&placement_id=placement_123&proof_run_id=proof_123",
+          "burl": "https://agency-bidder.example.com/events/bill?auction_id=auction_123&bid_id=bid_example&buyer_id=agency_bidder_1&campaign_id=campaign_video_1&lane_id=lane_123&package_id=package_123&placement_id=placement_123&proof_run_id=proof_123",
+          "lurl": "https://agency-bidder.example.com/events/loss?auction_id=auction_123&bid_id=bid_example&buyer_id=agency_bidder_1&campaign_id=campaign_video_1&lane_id=lane_123&package_id=package_123&placement_id=placement_123&proof_run_id=proof_123",
           "ext": {
             "clearledger": {
               "buyer_id": "agency_bidder_1",
               "campaign_id": "campaign_video_1",
               "creative_id": "creative_video_789",
-              "bidder": "clearledger-bidder-openrtb"
+              "bidder": "clearledger-bidder-openrtb",
+              "lane_id": "lane_123",
+              "package_id": "package_123",
+              "placement_id": "placement_123",
+              "proof_run_id": "proof_123",
+              "receipt_required": true
             }
           }
         }

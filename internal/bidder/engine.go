@@ -159,6 +159,7 @@ func (e *Engine) Bid(ctx context.Context, req *openrtb.BidRequest, received time
 	}
 
 	bidID := stableID("bid", req.ID, best.imp.ID, best.campaign.cfg.ID, best.creative.ID)
+	extClearLedger := clearLedgerBidExt(best.imp, e.cfg.BuyerID, best.campaign.cfg.ID, best.creative.ID)
 	bid := openrtb.Bid{
 		ID:      bidID,
 		ImpID:   best.imp.ID,
@@ -168,20 +169,13 @@ func (e *Engine) Bid(ctx context.Context, req *openrtb.BidRequest, received time
 		CrID:    best.creative.ID,
 		Adomain: best.creative.Adomain,
 		DealID:  best.dealID,
-		AdM:     renderMarkup(best.imp, best.creative, e.eventURL(best.creative, "imp", req.ID, bidID)),
-		NURL:    e.eventURL(best.creative, "win", req.ID, bidID),
-		BURL:    e.eventURL(best.creative, "bill", req.ID, bidID),
-		LURL:    e.eventURL(best.creative, "loss", req.ID, bidID),
+		AdM:     renderMarkup(best.imp, best.creative, e.eventURL(best.creative, "imp", req.ID, bidID, extClearLedger)),
+		NURL:    e.eventURL(best.creative, "win", req.ID, bidID, extClearLedger),
+		BURL:    e.eventURL(best.creative, "bill", req.ID, bidID, extClearLedger),
+		LURL:    e.eventURL(best.creative, "loss", req.ID, bidID, extClearLedger),
 		W:       best.creative.W,
 		H:       best.creative.H,
-		Ext: map[string]any{
-			"clearledger": map[string]any{
-				"buyer_id":    e.cfg.BuyerID,
-				"campaign_id": best.campaign.cfg.ID,
-				"creative_id": best.creative.ID,
-				"bidder":      "clearledger-bidder-openrtb",
-			},
-		},
+		Ext:     map[string]any{"clearledger": extClearLedger},
 	}
 	return Decision{Response: &openrtb.BidResponse{
 		ID:  req.ID,
@@ -456,7 +450,33 @@ func vastDuration(seconds int) string {
 	return fmt.Sprintf("%02d:%02d:%02d", hours, minutes, remainingSeconds)
 }
 
-func (e *Engine) eventURL(cr config.Creative, event, auctionID, bidID string) string {
+func clearLedgerBidExt(imp openrtb.Impression, buyerID, campaignID, creativeID string) map[string]any {
+	ext := map[string]any{
+		"buyer_id":    buyerID,
+		"campaign_id": campaignID,
+		"creative_id": creativeID,
+		"bidder":      "clearledger-bidder-openrtb",
+	}
+	source, ok := imp.Ext["clearledger"].(map[string]any)
+	if !ok {
+		return ext
+	}
+	for _, key := range []string{
+		"lane_id",
+		"private_market_id",
+		"package_id",
+		"placement_id",
+		"proof_run_id",
+		"receipt_required",
+	} {
+		if value, ok := source[key]; ok {
+			ext[key] = value
+		}
+	}
+	return ext
+}
+
+func (e *Engine) eventURL(cr config.Creative, event, auctionID, bidID string, clearLedgerExt map[string]any) string {
 	base := cr.NoticeBaseURL
 	if base == "" {
 		base = e.cfg.PublicEndpoint
@@ -472,6 +492,11 @@ func (e *Engine) eventURL(cr config.Creative, event, auctionID, bidID string) st
 	q.Set("auction_id", auctionID)
 	q.Set("bid_id", bidID)
 	q.Set("creative_id", cr.ID)
+	for _, key := range []string{"buyer_id", "campaign_id", "lane_id", "package_id", "placement_id", "proof_run_id"} {
+		if value, ok := clearLedgerExt[key].(string); ok && strings.TrimSpace(value) != "" {
+			q.Set(key, value)
+		}
+	}
 	u.RawQuery = q.Encode()
 	return u.String()
 }

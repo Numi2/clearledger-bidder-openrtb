@@ -38,7 +38,7 @@ Bid responses include:
 - `bid.dealid` for PMP inventory
 - `bid.adm` containing VAST for video/audio, display markup for banner, or OpenRTB native response JSON for native
 - `nurl`, `burl`, `lurl` notice URLs
-- `bid.ext.clearledger` with buyer/campaign/creative identifiers
+- `bid.ext.clearledger` with buyer/campaign/creative identifiers plus echoed ClearLedger lane/package/placement/proof fields when present in `imp.ext.clearledger`
 
 No-bid is `204 No Content`. Malformed OpenRTB is `400`.
 
@@ -100,6 +100,8 @@ The bidder exposes production-shaped service endpoints:
 - `GET /metrics`: Prometheus text metrics for bids, no-bids, malformed requests, notice callbacks, spend, budget, QPS, and campaign enabled state.
 - `GET /statez`: sanitized runtime state for campaign spend, pacing, QPS, media types, deal count, placement count, and approved creative count. It does not return auth tokens, signing secrets, creative markup, or ClearLedger settlement data.
 - `GET|POST /events/{win|bill|loss|imp}`: local notice callback sink for bidder-side observability. ClearLedger remains the billable impression and receipt authority.
+
+Generated notice URLs include auction, bid, buyer, campaign, creative, and any echoed ClearLedger lane/package/placement/proof identifiers so operators can reconcile local bidder logs with ClearLedger-owned delivery proof.
 
 `/readyz` returns `503` when no campaign is enabled or when required auth/signature secrets are missing. That lets load balancers and ClearLedger certification catch an unsafe deployment before live bid fanout.
 

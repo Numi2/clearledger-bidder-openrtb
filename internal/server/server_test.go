@@ -39,6 +39,30 @@ func TestBidVideoPMP(t *testing.T) {
 	if !strings.Contains(bid.AdM, `<VAST version="4.3">`) {
 		t.Fatalf("expected VAST adm, got %s", bid.AdM)
 	}
+	clearledgerExt, ok := bid.Ext["clearledger"].(map[string]any)
+	if !ok {
+		t.Fatalf("missing clearledger ext: %#v", bid.Ext)
+	}
+	for _, want := range []struct {
+		key   string
+		value any
+	}{
+		{"buyer_id", "agency_bidder_1"},
+		{"campaign_id", "campaign_video_1"},
+		{"creative_id", "creative_video_789"},
+		{"lane_id", "lane_123"},
+		{"package_id", "package_123"},
+		{"placement_id", "placement_123"},
+		{"proof_run_id", "proof_123"},
+		{"receipt_required", true},
+	} {
+		if clearledgerExt[want.key] != want.value {
+			t.Fatalf("ext[%s]=%#v want %#v in %#v", want.key, clearledgerExt[want.key], want.value, clearledgerExt)
+		}
+	}
+	if !strings.Contains(bid.NURL, "lane_id=lane_123") || !strings.Contains(bid.NURL, "proof_run_id=proof_123") {
+		t.Fatalf("expected proof fields in notice URL: %s", bid.NURL)
+	}
 }
 
 func TestNoBidFloorAndDeal(t *testing.T) {
