@@ -183,7 +183,7 @@ ClearLedger will still certify the endpoint, enforce the approved buyer lane, va
 
 ## Performance Posture
 
-The bidder keeps the OpenRTB hot path in-process: campaign config is loaded and compiled at startup, budget/QPS/pacing state is protected by a short mutex, and bid IDs are deterministic from auction ID, impression ID, campaign ID, and creative ID. Use `make bench` to run the hot-path benchmark before changing auction logic.
+The bidder keeps the OpenRTB hot path in-process: campaign config is loaded and compiled at startup, budget/QPS/pacing state is protected by a short mutex, and bid IDs are deterministic from auction ID, impression ID, campaign ID, and creative ID. Local spend and QPS reservations are only committed for bids the bidder actually returns; controlled no-bids do not consume local QPS. Use `make bench` to run the hot-path benchmark before changing auction logic.
 
 ## User Flow
 

@@ -50,6 +50,48 @@ func TestASAPPacingOnlyUsesDailyBudget(t *testing.T) {
 	}
 }
 
+func TestReserveDoesNotConsumeQPSWhenBudgetFails(t *testing.T) {
+	campaign := config.Campaign{
+		ID:          "campaign_1",
+		BidCPM:      10,
+		DailyBudget: 0.005,
+		QPS:         1,
+	}
+	engine := NewEngine(config.Config{})
+	now := time.Date(2026, 6, 4, 12, 0, 0, 0, time.UTC)
+	if engine.reserve(campaign, 10, now) {
+		t.Fatal("bid should exceed budget")
+	}
+	if got := engine.qps[campaign.ID].count; got != 0 {
+		t.Fatalf("failed budget reservation consumed qps count=%d", got)
+	}
+	if got := engine.spend[campaign.ID]; got != 0 {
+		t.Fatalf("failed budget reservation mutated spend=%f", got)
+	}
+}
+
+func TestReserveDoesNotConsumeQPSWhenPacingFails(t *testing.T) {
+	campaign := config.Campaign{
+		ID:              "campaign_1",
+		BidCPM:          10,
+		DailyBudget:     1,
+		PacingMode:      "even",
+		PacingTolerance: 1,
+		QPS:             10,
+	}
+	engine := NewEngine(config.Config{})
+	now := time.Date(2026, 6, 4, 0, 1, 0, 0, time.UTC)
+	if !engine.reserve(campaign, 10, now) {
+		t.Fatal("first bid should reserve")
+	}
+	if engine.reserve(campaign, 10, now) {
+		t.Fatal("second bid should be paced out")
+	}
+	if got := engine.qps[campaign.ID].count; got != 1 {
+		t.Fatalf("paced-out reservation should not consume qps; count=%d", got)
+	}
+}
+
 func TestBidRejectsUnsupportedRequestCurrency(t *testing.T) {
 	cfg, req := sampleConfigAndRequest(t)
 	req.Cur = []string{"EUR"}

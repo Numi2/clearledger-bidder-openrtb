@@ -251,8 +251,6 @@ func (e *Engine) reserve(campaign config.Campaign, priceCPM float64, now time.Ti
 			e.qps[campaign.ID] = state
 			return false
 		}
-		state.count++
-		e.qps[campaign.ID] = state
 	}
 	next := e.spend[campaign.ID] + priceCPM/1000
 	if campaign.DailyBudget > 0 && next > campaign.DailyBudget {
@@ -260,6 +258,15 @@ func (e *Engine) reserve(campaign config.Campaign, priceCPM float64, now time.Ti
 	}
 	if !pacingAllows(campaign, next, now) {
 		return false
+	}
+	if campaign.QPS > 0 {
+		nowSec := now.Unix()
+		state := e.qps[campaign.ID]
+		if state.sec != nowSec {
+			state = rateState{sec: nowSec}
+		}
+		state.count++
+		e.qps[campaign.ID] = state
 	}
 	e.spend[campaign.ID] = next
 	return true
