@@ -33,7 +33,7 @@ ClearLedger remains the transaction authority. It reads the Redis runtime manife
 
 ## Bidder Responsibilities
 
-The open-source bidder validates requests, applies local campaign rules, returns `204 No Content` for controlled no-bid, or returns an OpenRTB response with matching `id`, `seatbid.seat`, `bid.id`, `bid.impid`, CPM `price`, `crid`, `adomain`, PMP `dealid`, `adm`, notices, and `ext.clearledger` identifiers.
+The open-source bidder validates requests, applies local campaign rules, returns `204 No Content` for controlled no-bid, or returns an OpenRTB response with matching `id`, `seatbid.seat`, `bid.id`, `bid.impid`, CPM `price`, `crid`, `adomain`, PMP `dealid`, media-appropriate `adm`, notices, and `ext.clearledger` identifiers.
 
 It also exposes operator endpoints for certification and debugging:
 
@@ -69,7 +69,7 @@ ClearLedger operator:
 3. Applies lane floor, placement, app bundle, Deal ID, and proof extensions to the OpenRTB request.
 4. Signs the buyer request with the production `X-ClearLedger-Buyer-*` headers.
 5. Classifies every approved buyer response as bid, no-bid, invalid bid, HTTP error, or transport error.
-6. Validates response id, seat, impid, price/floor, currency, crid, adomain, dealid, VAST/adm, and notice/proof fields.
+6. Validates response id, seat, impid, price/floor, currency, crid, adomain, dealid, media-appropriate VAST/display/native `adm`, and notice/proof fields.
 7. Selects the highest valid bid and builds the supply VAST/adm response.
 8. Emits delivery proof and proof steps marking delivery tracking, evidence archive, billing, settlement, publisher net, ClearLedger fee, and final receipt authority as ClearLedger-owned and outside the bidder.
 

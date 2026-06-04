@@ -27,7 +27,7 @@ func TestValidateBidResponse(t *testing.T) {
 				CrID:    "creative_1",
 				Adomain: []string{"advertiser.com"},
 				DealID:  "deal_clearledger_123",
-				AdM:     `<VAST version="4.3"><Ad><InLine><Impression>https://example.com/i</Impression><Creatives><Creative><Linear><MediaFiles><MediaFile>https://example.com/a.mp4</MediaFile></MediaFiles></Linear></Creative></Creatives></InLine></Ad></VAST>`,
+				AdM:     `<VAST version="4.3"><Ad><InLine><Impression>https://example.com/i</Impression><Creatives><Creative><Linear><Duration>00:00:30</Duration><MediaFiles><MediaFile>https://example.com/a.mp4</MediaFile></MediaFiles></Linear></Creative></Creatives></InLine></Ad></VAST>`,
 				Ext:     map[string]any{"clearledger": map[string]any{"buyer_id": "buyer"}},
 			}},
 		}},
@@ -80,7 +80,7 @@ func TestValidateBidResponseRequiresNoticeOrProofExt(t *testing.T) {
 				Price:   1,
 				CrID:    "creative",
 				Adomain: []string{"advertiser.com"},
-				AdM:     "<div>ad</div>",
+				AdM:     `<a href="https://advertiser.com"><img src="https://cdn.example/ad.png" width="300" height="250" alt=""></a>`,
 			}},
 		}},
 	}
@@ -90,5 +90,43 @@ func TestValidateBidResponseRequiresNoticeOrProofExt(t *testing.T) {
 	resp.SeatBid[0].Bid[0].NURL = "https://bidder.example/win"
 	if err := ValidateBidResponse(req, resp); err != nil {
 		t.Fatal(err)
+	}
+}
+
+func TestValidateBidResponseRejectsWrongMediaMarkup(t *testing.T) {
+	req := &BidRequest{
+		ID:   "auction",
+		Cur:  []string{"USD"},
+		Site: &Site{Domain: "example.com"},
+		Imp:  []Impression{{ID: "1", BidFloor: 1, Video: &Video{Mimes: []string{"video/mp4"}}}},
+	}
+	resp := &BidResponse{
+		ID:  "auction",
+		Cur: "USD",
+		SeatBid: []SeatBid{{
+			Seat: "seat",
+			Bid: []Bid{{
+				ID:      "bid",
+				ImpID:   "1",
+				Price:   1,
+				CrID:    "creative",
+				Adomain: []string{"advertiser.com"},
+				AdM:     `<img src="https://example.com/ad.png">`,
+				NURL:    "https://bidder.example/win",
+			}},
+		}},
+	}
+	if err := ValidateBidResponse(req, resp); err == nil {
+		t.Fatal("expected video response with display adm to fail")
+	}
+}
+
+func TestLooksLikeNativeAdM(t *testing.T) {
+	valid := `{"native":{"assets":[{"id":1,"title":{"text":"creative"}}],"link":{"url":"https://advertiser.com"},"imptrackers":["https://tracker.example/imp"]}}`
+	if !LooksLikeNativeAdM(valid) {
+		t.Fatal("expected native adm to validate")
+	}
+	if LooksLikeNativeAdM(`{"native":{"assets":[],"link":{"url":""}}}`) {
+		t.Fatal("expected incomplete native adm to fail")
 	}
 }

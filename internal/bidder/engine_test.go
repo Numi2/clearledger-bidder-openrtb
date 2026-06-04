@@ -3,6 +3,7 @@ package bidder
 import (
 	"context"
 	"os"
+	"strings"
 	"testing"
 	"time"
 
@@ -73,6 +74,28 @@ func TestBidRejectsDealCurrencyMismatch(t *testing.T) {
 	decision := NewEngine(cfg).Bid(context.Background(), req, time.Now().UTC())
 	if !decision.NoBid || decision.Reason != "no_eligible_campaign" {
 		t.Fatalf("expected deal currency no-bid, got %#v", decision)
+	}
+}
+
+func TestBidRejectsUnsupportedVideoMime(t *testing.T) {
+	cfg, req := sampleConfigAndRequest(t)
+	req.Imp[0].Video.Mimes = []string{"video/webm"}
+	decision := NewEngine(cfg).Bid(context.Background(), req, time.Now().UTC())
+	if !decision.NoBid || decision.Reason != "no_eligible_campaign" {
+		t.Fatalf("expected mime no-bid, got %#v", decision)
+	}
+}
+
+func TestVASTDurationFormatsOverOneMinute(t *testing.T) {
+	cfg, req := sampleConfigAndRequest(t)
+	cfg.Campaigns[0].Creatives[0].Duration = 125
+	decision := NewEngine(cfg).Bid(context.Background(), req, time.Now().UTC())
+	if decision.NoBid || decision.Response == nil {
+		t.Fatalf("expected bid, got %#v", decision)
+	}
+	adm := decision.Response.SeatBid[0].Bid[0].AdM
+	if !strings.Contains(adm, "<Duration>00:02:05</Duration>") {
+		t.Fatalf("expected HH:MM:SS VAST duration, got %s", adm)
 	}
 }
 

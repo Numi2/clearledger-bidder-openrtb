@@ -229,6 +229,9 @@ func (e *Engine) evaluate(req *openrtb.BidRequest, imp openrtb.Impression, campa
 	if !ok {
 		return candidate{}, false
 	}
+	if !creativeMatchesRequest(imp, creative) {
+		return candidate{}, false
+	}
 	if blockedAdvertiser(req, creative) {
 		return candidate{}, false
 	}
@@ -366,6 +369,29 @@ func chooseCreative(mediaType string, req *openrtb.BidRequest, creatives []confi
 	return config.Creative{}, false
 }
 
+func creativeMatchesRequest(imp openrtb.Impression, creative config.Creative) bool {
+	switch imp.MediaType() {
+	case "video":
+		return mimeAllowed(imp.Video.Mimes, assetMime(creative, "video"))
+	case "audio":
+		return mimeAllowed(imp.Audio.Mimes, assetMime(creative, "audio"))
+	default:
+		return true
+	}
+}
+
+func mimeAllowed(allowed []string, mime string) bool {
+	if len(allowed) == 0 || strings.TrimSpace(mime) == "" {
+		return true
+	}
+	for _, value := range allowed {
+		if strings.EqualFold(strings.TrimSpace(value), mime) {
+			return true
+		}
+	}
+	return false
+}
+
 func blockedAdvertiser(req *openrtb.BidRequest, creative config.Creative) bool {
 	for _, domain := range creative.Adomain {
 		if contains(req.BAdv, domain) {
@@ -385,11 +411,8 @@ func renderMarkup(imp openrtb.Impression, cr config.Creative, impURL string) str
 		if duration <= 0 {
 			duration = 30
 		}
-		mime := "video/mp4"
-		if imp.MediaType() == "audio" {
-			mime = "audio/mpeg"
-		}
-		return fmt.Sprintf(`<VAST version="4.3"><Ad id="%s"><InLine><AdSystem>ClearLedger Bidder OpenRTB</AdSystem><AdTitle>%s</AdTitle><Impression><![CDATA[%s]]></Impression><Creatives><Creative id="%s"><Linear><Duration>00:00:%02d</Duration><MediaFiles><MediaFile delivery="progressive" type="%s" width="%d" height="%d"><![CDATA[%s]]></MediaFile></MediaFiles><VideoClicks><ClickThrough><![CDATA[%s]]></ClickThrough></VideoClicks></Linear></Creative></Creatives></InLine></Ad></VAST>`, cr.ID, cr.ID, impURL, cr.ID, duration, mime, max(cr.W, 640), max(cr.H, 360), cr.AssetURL, cr.LandingURL)
+		mime := assetMime(cr, imp.MediaType())
+		return fmt.Sprintf(`<VAST version="4.3"><Ad id="%s"><InLine><AdSystem>ClearLedger Bidder OpenRTB</AdSystem><AdTitle>%s</AdTitle><Impression><![CDATA[%s]]></Impression><Creatives><Creative id="%s"><Linear><Duration>%s</Duration><MediaFiles><MediaFile delivery="progressive" type="%s" width="%d" height="%d"><![CDATA[%s]]></MediaFile></MediaFiles><VideoClicks><ClickThrough><![CDATA[%s]]></ClickThrough></VideoClicks></Linear></Creative></Creatives></InLine></Ad></VAST>`, cr.ID, cr.ID, impURL, cr.ID, vastDuration(duration), mime, max(cr.W, 640), max(cr.H, 360), cr.AssetURL, cr.LandingURL)
 	case "native":
 		body, _ := json.Marshal(map[string]any{"native": map[string]any{"link": map[string]any{"url": cr.LandingURL}, "assets": []map[string]any{{"id": 1, "title": map[string]any{"text": cr.ID}}}, "imptrackers": []string{impURL}}})
 		return string(body)
@@ -397,6 +420,40 @@ func renderMarkup(imp openrtb.Impression, cr config.Creative, impURL string) str
 		w, h := max(cr.W, 300), max(cr.H, 250)
 		return fmt.Sprintf(`<a href="%s" target="_blank" rel="noopener"><img src="%s" width="%d" height="%d" alt=""></a><img src="%s" width="1" height="1" alt="">`, htmlEscape(cr.LandingURL), htmlEscape(cr.AssetURL), w, h, htmlEscape(impURL))
 	}
+}
+
+func assetMime(cr config.Creative, mediaType string) string {
+	lower := strings.ToLower(strings.TrimSpace(cr.AssetURL))
+	switch {
+	case strings.HasSuffix(lower, ".mp3"):
+		return "audio/mpeg"
+	case strings.HasSuffix(lower, ".m4a"):
+		return "audio/mp4"
+	case strings.HasSuffix(lower, ".ogg"):
+		return "audio/ogg"
+	case strings.HasSuffix(lower, ".webm"):
+		if mediaType == "audio" {
+			return "audio/webm"
+		}
+		return "video/webm"
+	case strings.HasSuffix(lower, ".mov"):
+		return "video/quicktime"
+	default:
+		if mediaType == "audio" {
+			return "audio/mpeg"
+		}
+		return "video/mp4"
+	}
+}
+
+func vastDuration(seconds int) string {
+	if seconds <= 0 {
+		seconds = 30
+	}
+	hours := seconds / 3600
+	minutes := (seconds % 3600) / 60
+	remainingSeconds := seconds % 60
+	return fmt.Sprintf("%02d:%02d:%02d", hours, minutes, remainingSeconds)
 }
 
 func (e *Engine) eventURL(cr config.Creative, event, auctionID, bidID string) string {

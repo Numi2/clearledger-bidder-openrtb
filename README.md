@@ -36,7 +36,7 @@ Bid responses include:
 - `seatbid[].seat`
 - `bid.id`, `bid.impid`, `bid.price`, `bid.crid`, `bid.adomain`
 - `bid.dealid` for PMP inventory
-- `bid.adm` containing VAST, display markup, or native markup
+- `bid.adm` containing VAST for video/audio, display markup for banner, or OpenRTB native response JSON for native
 - `nurl`, `burl`, `lurl` notice URLs
 - `bid.ext.clearledger` with buyer/campaign/creative identifiers
 
@@ -89,7 +89,7 @@ Each campaign can constrain:
 - app ID, bundle, domain, placement, Deal ID, geo, media type
 - CPM bid, daily budget, QPS
 - creative approval, advertiser domain, landing URL, asset URL, VAST/display/native rendering
-- request currency, PMP Deal currency, blocked advertiser domains, COPPA, and limited-ad-tracking constraints
+- request currency, PMP Deal currency, media MIME compatibility, blocked advertiser domains, COPPA, and limited-ad-tracking constraints
 
 ## Operations Endpoints
 

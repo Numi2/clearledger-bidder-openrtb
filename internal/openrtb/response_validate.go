@@ -1,6 +1,7 @@
 package openrtb
 
 import (
+	"encoding/json"
 	"fmt"
 	"strings"
 )
@@ -53,6 +54,9 @@ func ValidateBidResponse(req *BidRequest, resp *BidResponse) error {
 			if bid.AdM == "" {
 				return fmt.Errorf("adm is required")
 			}
+			if err := ValidateAdMarkup(impIDs[bid.ImpID], bid.AdM); err != nil {
+				return err
+			}
 			if bid.NURL == "" && bid.BURL == "" && bid.LURL == "" && !hasClearLedgerExt(bid.Ext) {
 				return fmt.Errorf("bid requires notice URLs or ext.clearledger proof fields")
 			}
@@ -69,10 +73,56 @@ func ValidateBidResponse(req *BidRequest, resp *BidResponse) error {
 	return nil
 }
 
+func ValidateAdMarkup(imp Impression, adm string) error {
+	switch imp.MediaType() {
+	case "video", "audio":
+		if !LooksLikeVAST(adm) {
+			return fmt.Errorf("adm must be VAST for %s impressions", imp.MediaType())
+		}
+	case "native":
+		if !LooksLikeNativeAdM(adm) {
+			return fmt.Errorf("adm must be OpenRTB native response JSON for native impressions")
+		}
+	case "display":
+		if !LooksLikeDisplayAdM(adm) {
+			return fmt.Errorf("adm must include display markup for banner impressions")
+		}
+	default:
+		return fmt.Errorf("unknown impression media type")
+	}
+	return nil
+}
+
 func LooksLikeVAST(adm string) bool {
 	trimmed := strings.TrimSpace(adm)
 	upper := strings.ToUpper(trimmed)
-	return strings.HasPrefix(upper, "<VAST") && strings.Contains(upper, "<IMPRESSION") && strings.Contains(upper, "<MEDIAFILE")
+	return strings.HasPrefix(upper, "<VAST") &&
+		strings.Contains(upper, "<IMPRESSION") &&
+		strings.Contains(upper, "<MEDIAFILE") &&
+		strings.Contains(upper, "<DURATION>")
+}
+
+func LooksLikeDisplayAdM(adm string) bool {
+	lower := strings.ToLower(strings.TrimSpace(adm))
+	return strings.Contains(lower, "<img") || strings.Contains(lower, "<script") || strings.Contains(lower, "<iframe")
+}
+
+func LooksLikeNativeAdM(adm string) bool {
+	var body struct {
+		Native struct {
+			Assets []struct {
+				ID int `json:"id"`
+			} `json:"assets"`
+			Link struct {
+				URL string `json:"url"`
+			} `json:"link"`
+			ImpTrackers []string `json:"imptrackers"`
+		} `json:"native"`
+	}
+	if err := json.Unmarshal([]byte(adm), &body); err != nil {
+		return false
+	}
+	return len(body.Native.Assets) > 0 && strings.TrimSpace(body.Native.Link.URL) != ""
 }
 
 func hasClearLedgerExt(ext map[string]any) bool {
