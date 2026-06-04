@@ -35,6 +35,15 @@ ClearLedger remains the transaction authority. It reads the Redis runtime manife
 
 The open-source bidder validates requests, applies local campaign rules, returns `204 No Content` for controlled no-bid, or returns an OpenRTB response with matching `id`, `seatbid.seat`, `bid.id`, `bid.impid`, CPM `price`, `crid`, `adomain`, PMP `dealid`, `adm`, notices, and `ext.clearledger` identifiers.
 
+It also exposes operator endpoints for certification and debugging:
+
+- `/healthz` and `/readyz` for liveness and readiness.
+- `/metrics` for Prometheus-compatible counters and campaign gauges.
+- `/statez` for sanitized campaign runtime state.
+- `/events/{win|bill|loss|imp}` as a local notice sink.
+
+These endpoints help an agency operate the bidder, but they do not replace ClearLedger impression tracking, evidence archive, billing, settlement, publisher net, ClearLedger fee, payout, or final receipt systems.
+
 ## Certification Flow
 
 Agency/server operator:

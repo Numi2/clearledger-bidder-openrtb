@@ -35,6 +35,25 @@ type Decision struct {
 	Reason   string
 }
 
+type CampaignSnapshot struct {
+	ID                    string   `json:"id"`
+	Enabled               bool     `json:"enabled"`
+	Seat                  string   `json:"seat"`
+	MediaTypes            []string `json:"media_types"`
+	BidCPM                float64  `json:"bid_cpm"`
+	DailyBudget           float64  `json:"daily_budget"`
+	SpendToday            float64  `json:"spend_today"`
+	PacingMode            string   `json:"pacing_mode,omitempty"`
+	PacingTolerance       float64  `json:"pacing_tolerance,omitempty"`
+	QPSLimit              int      `json:"qps_limit,omitempty"`
+	QPSCurrentWindowUnix  int64    `json:"qps_current_window_unix,omitempty"`
+	QPSCurrentWindowCount int      `json:"qps_current_window_count,omitempty"`
+	CreativeCount         int      `json:"creative_count"`
+	ApprovedCreativeCount int      `json:"approved_creative_count"`
+	DealCount             int      `json:"deal_count"`
+	PlacementCount        int      `json:"placement_count"`
+}
+
 func NewEngine(cfg config.Config) *Engine {
 	return &Engine{
 		cfg:    cfg,
@@ -42,6 +61,50 @@ func NewEngine(cfg config.Config) *Engine {
 		qps:    map[string]rateState{},
 		dayKey: time.Now().UTC().Format("2006-01-02"),
 	}
+}
+
+func (e *Engine) Snapshot(now time.Time) []CampaignSnapshot {
+	e.mu.Lock()
+	defer e.mu.Unlock()
+	day := now.UTC().Format("2006-01-02")
+	nowSec := now.Unix()
+	out := make([]CampaignSnapshot, 0, len(e.cfg.Campaigns))
+	for _, campaign := range e.cfg.Campaigns {
+		approved := 0
+		for _, creative := range campaign.Creatives {
+			if creative.Approved {
+				approved++
+			}
+		}
+		spend := 0.0
+		if e.dayKey == day {
+			spend = e.spend[campaign.ID]
+		}
+		qps := e.qps[campaign.ID]
+		qpsCount := 0
+		if qps.sec == nowSec {
+			qpsCount = qps.count
+		}
+		out = append(out, CampaignSnapshot{
+			ID:                    campaign.ID,
+			Enabled:               campaign.Enabled,
+			Seat:                  campaign.Seat,
+			MediaTypes:            append([]string(nil), campaign.MediaTypes...),
+			BidCPM:                campaign.BidCPM,
+			DailyBudget:           campaign.DailyBudget,
+			SpendToday:            roundMoney(spend),
+			PacingMode:            campaign.PacingMode,
+			PacingTolerance:       campaign.PacingTolerance,
+			QPSLimit:              campaign.QPS,
+			QPSCurrentWindowUnix:  qps.sec,
+			QPSCurrentWindowCount: qpsCount,
+			CreativeCount:         len(campaign.Creatives),
+			ApprovedCreativeCount: approved,
+			DealCount:             len(campaign.DealIDs),
+			PlacementCount:        len(campaign.AllowedPlacements),
+		})
+	}
+	return out
 }
 
 func (e *Engine) Bid(ctx context.Context, req *openrtb.BidRequest, received time.Time) Decision {
@@ -345,6 +408,9 @@ func contains(values []string, needle string) bool {
 }
 
 func roundCPM(v float64) float64 { return math.Round(v*10000) / 10000 }
+func roundMoney(v float64) float64 {
+	return math.Round(v*1000000) / 1000000
+}
 func max(a, b int) int {
 	if a > b {
 		return a

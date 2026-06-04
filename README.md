@@ -90,6 +90,16 @@ Each campaign can constrain:
 - creative approval, advertiser domain, landing URL, asset URL, VAST/display/native rendering
 - basic privacy handling such as COPPA and limited-ad-tracking constraints
 
+## Operations Endpoints
+
+The bidder exposes production-shaped service endpoints:
+
+- `GET /healthz`: process health and bidder identity.
+- `GET /readyz`: readiness, enabled campaign count, enabled media types, and whether auth/signing are configured.
+- `GET /metrics`: Prometheus text metrics for bids, no-bids, malformed requests, notice callbacks, spend, budget, QPS, and campaign enabled state.
+- `GET /statez`: sanitized runtime state for campaign spend, pacing, QPS, media types, deal count, placement count, and approved creative count. It does not return auth tokens, signing secrets, creative markup, or ClearLedger settlement data.
+- `GET|POST /events/{win|bill|loss|imp}`: local notice callback sink for bidder-side observability. ClearLedger remains the billable impression and receipt authority.
+
 ## ClearLedger Registration Mode
 
 Register the endpoint after deployment:
@@ -141,7 +151,7 @@ ClearLedger will still certify the endpoint, enforce the approved buyer lane, va
 
 ## User Flow
 
-This does not require a bidder website. The agency/operator flow is CLI/API first:
+This does not require a bidder website. The open-source bidder is an HTTP service plus CLI tools because the runtime path must stay small and low-latency. Agencies can build their own UI on top of the JSON config and endpoints if they want one, but the supported user flow is CLI/API first:
 
 1. Configure local campaigns in JSON.
 2. Deploy the bidder on any HTTPS-capable server.
@@ -149,6 +159,7 @@ This does not require a bidder website. The agency/operator flow is CLI/API firs
 4. Optionally run `cmd/clearledger-harness` with a ClearLedger-style runtime manifest for local lane proof.
 5. Submit the approved-buyer registration payload to ClearLedger.
 6. ClearLedger publishes the approved buyer in the Redis runtime manifest and starts signed OpenRTB fanout.
+7. Monitor `/readyz`, `/metrics`, `/statez`, and notice callback counts while ClearLedger owns delivery proof, billable events, settlement, publisher net, fee computation, payout workflow, and final receipts.
 
 ## Compose
 

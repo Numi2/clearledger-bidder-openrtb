@@ -156,6 +156,61 @@ func TestProductionBuyerSignatureRejectsBodyHashMismatch(t *testing.T) {
 	}
 }
 
+func TestStateAndMetricsExposeSanitizedRuntimeState(t *testing.T) {
+	cfg := sampleConfig(t)
+	cfg.AuthToken = "secret-token"
+	cfg.SigningSecret = "secret-signing-key"
+	h := New(cfg, bidder.NewEngine(cfg))
+	if rr := post(t, h, sampleVideoRequest(t)); rr.Code != http.StatusOK {
+		t.Fatalf("bid status=%d body=%s", rr.Code, rr.Body.String())
+	}
+	stateReq := httptest.NewRequest(http.MethodGet, "/statez", nil)
+	stateRR := httptest.NewRecorder()
+	h.ServeHTTP(stateRR, stateReq)
+	if stateRR.Code != http.StatusOK {
+		t.Fatalf("state status=%d body=%s", stateRR.Code, stateRR.Body.String())
+	}
+	body := stateRR.Body.String()
+	for _, want := range []string{`"buyer_id":"agency_bidder_1"`, `"spend_today":0.00925`, `"approved_creative_count":1`} {
+		if !strings.Contains(body, want) {
+			t.Fatalf("state missing %s in %s", want, body)
+		}
+	}
+	if strings.Contains(body, cfg.AuthToken) || strings.Contains(body, cfg.SigningSecret) {
+		t.Fatalf("state leaked secrets: %s", body)
+	}
+
+	metricsReq := httptest.NewRequest(http.MethodGet, "/metrics", nil)
+	metricsRR := httptest.NewRecorder()
+	h.ServeHTTP(metricsRR, metricsReq)
+	metrics := metricsRR.Body.String()
+	for _, want := range []string{
+		`clearledger_bidder_openrtb_requests_total{result="bid"} 1`,
+		`clearledger_bidder_campaign_spend_usd{campaign_id="campaign_video_1"} 0.009250`,
+		`clearledger_bidder_campaign_enabled{campaign_id="campaign_video_1"} 1`,
+	} {
+		if !strings.Contains(metrics, want) {
+			t.Fatalf("metrics missing %s in %s", want, metrics)
+		}
+	}
+}
+
+func TestEventEndpointCountsNoticeCallbacks(t *testing.T) {
+	h := testHandler(t)
+	req := httptest.NewRequest(http.MethodGet, "/events/win?auction_id=a&bid_id=b", nil)
+	rr := httptest.NewRecorder()
+	h.ServeHTTP(rr, req)
+	if rr.Code != http.StatusNoContent {
+		t.Fatalf("event status=%d body=%s", rr.Code, rr.Body.String())
+	}
+	metricsReq := httptest.NewRequest(http.MethodGet, "/metrics", nil)
+	metricsRR := httptest.NewRecorder()
+	h.ServeHTTP(metricsRR, metricsReq)
+	if !strings.Contains(metricsRR.Body.String(), `clearledger_bidder_openrtb_requests_total{result="event_win"} 1`) {
+		t.Fatalf("missing event metric: %s", metricsRR.Body.String())
+	}
+}
+
 func testHandler(t *testing.T) http.Handler {
 	t.Helper()
 	cfg := sampleConfig(t)

@@ -35,6 +35,7 @@ func New(cfg config.Config, engine *bidder.Engine) http.Handler {
 	mux.HandleFunc("/healthz", s.health)
 	mux.HandleFunc("/readyz", s.ready)
 	mux.HandleFunc("/metrics", s.metrics)
+	mux.HandleFunc("/statez", s.state)
 	mux.HandleFunc("/openrtb", s.openrtb)
 	mux.HandleFunc("/buyers/", s.buyerOpenRTB)
 	mux.HandleFunc("/events/", s.event)
@@ -94,17 +95,36 @@ func (s *Server) health(w http.ResponseWriter, r *http.Request) {
 }
 
 func (s *Server) ready(w http.ResponseWriter, r *http.Request) {
-	ok := len(s.cfg.Campaigns) > 0
+	now := time.Now().UTC()
+	snapshots := s.engine.Snapshot(now)
+	enabled := 0
+	mediaTypes := map[string]struct{}{}
+	for _, campaign := range snapshots {
+		if campaign.Enabled {
+			enabled++
+			for _, mediaType := range campaign.MediaTypes {
+				mediaTypes[metricLabel(mediaType)] = struct{}{}
+			}
+		}
+	}
+	ok := enabled > 0
 	status := http.StatusOK
 	if !ok {
 		status = http.StatusServiceUnavailable
 	}
 	writeJSON(w, status, map[string]any{
-		"ok":        ok,
-		"campaigns": len(s.cfg.Campaigns),
+		"ok":                ok,
+		"campaigns":         len(s.cfg.Campaigns),
+		"enabled_campaigns": enabled,
+		"media_types":       sortedKeys(mediaTypes),
+		"buyer_id":          s.cfg.BuyerID,
+		"seat":              s.cfg.Seat,
+		"endpoint":          "/openrtb",
 		"auth": map[string]any{
-			"bearer_required":    s.cfg.RequireAuth,
-			"signature_required": s.cfg.RequireSignature,
+			"bearer_required":      s.cfg.RequireAuth,
+			"bearer_configured":    s.cfg.AuthToken != "",
+			"signature_required":   s.cfg.RequireSignature,
+			"signature_configured": s.cfg.SigningSecret != "",
 		},
 	})
 }
@@ -112,10 +132,49 @@ func (s *Server) ready(w http.ResponseWriter, r *http.Request) {
 func (s *Server) metrics(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Content-Type", "text/plain; version=0.0.4")
 	s.mu.Lock()
-	defer s.mu.Unlock()
+	counts := make(map[string]uint64, len(s.counts))
 	for label, count := range s.counts {
+		counts[label] = count
+	}
+	s.mu.Unlock()
+	for label, count := range counts {
 		_, _ = fmt.Fprintf(w, "clearledger_bidder_openrtb_requests_total{result=%q} %d\n", label, count)
 	}
+	for _, campaign := range s.engine.Snapshot(time.Now().UTC()) {
+		_, _ = fmt.Fprintf(w, "clearledger_bidder_campaign_spend_usd{campaign_id=%q} %.6f\n", campaign.ID, campaign.SpendToday)
+		_, _ = fmt.Fprintf(w, "clearledger_bidder_campaign_daily_budget_usd{campaign_id=%q} %.6f\n", campaign.ID, campaign.DailyBudget)
+		_, _ = fmt.Fprintf(w, "clearledger_bidder_campaign_qps_current{campaign_id=%q} %d\n", campaign.ID, campaign.QPSCurrentWindowCount)
+		_, _ = fmt.Fprintf(w, "clearledger_bidder_campaign_enabled{campaign_id=%q} %d\n", campaign.ID, boolMetric(campaign.Enabled))
+	}
+}
+
+func (s *Server) state(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodGet {
+		writeJSON(w, http.StatusMethodNotAllowed, map[string]any{"error": "method_not_allowed"})
+		return
+	}
+	snapshots := s.engine.Snapshot(time.Now().UTC())
+	enabled := 0
+	for _, campaign := range snapshots {
+		if campaign.Enabled {
+			enabled++
+		}
+	}
+	writeJSON(w, http.StatusOK, map[string]any{
+		"ok":                enabled > 0,
+		"service":           "clearledger-bidder-openrtb",
+		"buyer_id":          s.cfg.BuyerID,
+		"seat":              s.cfg.Seat,
+		"endpoint":          "/openrtb",
+		"campaigns":         snapshots,
+		"enabled_campaigns": enabled,
+		"auth": map[string]any{
+			"bearer_required":      s.cfg.RequireAuth,
+			"bearer_configured":    s.cfg.AuthToken != "",
+			"signature_required":   s.cfg.RequireSignature,
+			"signature_configured": s.cfg.SigningSecret != "",
+		},
+	})
 }
 
 func (s *Server) event(w http.ResponseWriter, r *http.Request) {
@@ -239,6 +298,26 @@ func metricLabel(value string) string {
 		out.WriteByte('_')
 	}
 	return out.String()
+}
+
+func sortedKeys(values map[string]struct{}) []string {
+	out := make([]string, 0, len(values))
+	for value := range values {
+		out = append(out, value)
+	}
+	for i := 1; i < len(out); i++ {
+		for j := i; j > 0 && out[j] < out[j-1]; j-- {
+			out[j], out[j-1] = out[j-1], out[j]
+		}
+	}
+	return out
+}
+
+func boolMetric(value bool) int {
+	if value {
+		return 1
+	}
+	return 0
 }
 
 func writeJSON(w http.ResponseWriter, status int, payload any) {
