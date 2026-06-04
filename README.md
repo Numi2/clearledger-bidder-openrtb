@@ -113,6 +113,21 @@ go run ./cmd/certify \
 
 The harness checks readiness, production ClearLedger signature headers, valid bid response shape, controlled no-bid, malformed request rejection, and OpenRTB bid-response validation.
 
+## ClearLedger Lane Harness
+
+For local end-to-end compatibility without private ClearLedger services, run the ClearLedger-side harness. It reads `samples/clearledger-runtime-manifest.local.json`, enforces the active lane and approved buyer route, signs OpenRTB fanout, validates the bid, selects the winner, builds the VAST/adm supply response, and emits proof steps showing that delivery tracking, billing, settlement, publisher net, ClearLedger fee, and final receipts stay outside the bidder.
+
+```bash
+export BIDDER_OPENRTB_AUTH_TOKEN='token'
+export BIDDER_OPENRTB_SIGNING_SECRET='secret'
+export BIDDER_OPENRTB_REQUIRE_AUTH=true
+export BIDDER_OPENRTB_REQUIRE_SIGNATURE=true
+make run
+
+# In another shell:
+make harness
+```
+
 ClearLedger will still certify the endpoint, enforce the approved buyer lane, validate bid responses, select winners, return VAST/adm to supply, track delivery, and handle all billable/settlement/final receipt proof outside this bidder.
 
 ## User Flow
@@ -122,5 +137,6 @@ This does not require a bidder website. The agency/operator flow is CLI/API firs
 1. Configure local campaigns in JSON.
 2. Deploy the bidder on any HTTPS-capable server.
 3. Run `cmd/certify` against the public endpoint.
-4. Submit the approved-buyer registration payload to ClearLedger.
-5. ClearLedger publishes the approved buyer in the Redis runtime manifest and starts signed OpenRTB fanout.
+4. Optionally run `cmd/clearledger-harness` with a ClearLedger-style runtime manifest for local lane proof.
+5. Submit the approved-buyer registration payload to ClearLedger.
+6. ClearLedger publishes the approved buyer in the Redis runtime manifest and starts signed OpenRTB fanout.

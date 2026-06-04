@@ -1,0 +1,41 @@
+{
+  "version": "local-clearledger-harness",
+  "schema_version": "clearledger.direct_market.private_auction_runtime_manifest.v1",
+  "generated_at": "2026-06-04T00:00:00Z",
+  "org_id": "org_cert",
+  "lanes": [
+    {
+      "org_id": "org_cert",
+      "lane_id": "lane_123",
+      "private_market_id": "pm_cert",
+      "seller_id": "publisher_123",
+      "status": "active",
+      "auction_type": "first_price",
+      "floor_cpm": 9.0,
+      "currency": "USD",
+      "formats": ["video"],
+      "app_bundles": ["com.example.app"],
+      "placement_ids": ["placement_123"],
+      "require_adomain": true,
+      "metadata": {
+        "package_id": "package_123",
+        "deal_id": "deal_clearledger_123"
+      },
+      "approved_buyers": [
+        {
+          "buyer_id": "agency_bidder_1",
+          "seat_id": "agency_seat_1",
+          "name": "Agency Bidder 1",
+          "status": "approved",
+          "openrtb_endpoint": "http://127.0.0.1:8080/openrtb",
+          "bid_protocol": "openrtb_json",
+          "timeout_ms": 250,
+          "qps_limit": 100,
+          "allowed_formats": ["video"],
+          "auth_token_env": "BIDDER_OPENRTB_AUTH_TOKEN",
+          "signing_secret_env": "BIDDER_OPENRTB_SIGNING_SECRET"
+        }
+      ]
+    }
+  ]
+}
