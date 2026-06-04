@@ -1,0 +1,12 @@
+services:
+  bidder:
+    build: .
+    image: clearledger-bidder-openrtb:local
+    ports:
+      - "8080:8080"
+    environment:
+      BIDDER_OPENRTB_AUTH_TOKEN: token
+      BIDDER_OPENRTB_SIGNING_SECRET: secret
+      BIDDER_OPENRTB_REQUIRE_AUTH: "true"
+      BIDDER_OPENRTB_REQUIRE_SIGNATURE: "true"
+      BIDDER_PUBLIC_ENDPOINT: http://localhost:8080

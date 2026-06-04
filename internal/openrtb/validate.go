@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"io"
 )
 
 var ErrMalformed = errors.New("malformed_openrtb")
@@ -14,6 +15,10 @@ func DecodeRequest(body []byte) (*BidRequest, error) {
 	dec := json.NewDecoder(bytes.NewReader(body))
 	if err := dec.Decode(&req); err != nil {
 		return nil, fmt.Errorf("%w: %v", ErrMalformed, err)
+	}
+	var trailing any
+	if err := dec.Decode(&trailing); err != io.EOF {
+		return nil, fmt.Errorf("%w: trailing JSON data", ErrMalformed)
 	}
 	req.Raw = append(req.Raw[:0], body...)
 	if err := ValidateRequest(&req); err != nil {

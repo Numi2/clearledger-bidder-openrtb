@@ -1,0 +1,38 @@
+{
+  "id": "display_auction_123",
+  "tmax": 200,
+  "at": 1,
+  "cur": ["USD"],
+  "site": {
+    "id": "site_123",
+    "name": "Example Site",
+    "domain": "example.com",
+    "page": "https://example.com/article"
+  },
+  "device": {
+    "ua": "Mozilla/5.0",
+    "ip": "203.0.113.10"
+  },
+  "regs": { "coppa": 0 },
+  "imp": [
+    {
+      "id": "1",
+      "secure": 1,
+      "bidfloor": 1.5,
+      "bidfloorcur": "USD",
+      "tagid": "display_1",
+      "banner": {
+        "w": 300,
+        "h": 250,
+        "mimes": ["image/png", "image/jpeg"]
+      },
+      "ext": {
+        "clearledger": {
+          "lane_id": "lane_display",
+          "placement_id": "display_1",
+          "receipt_required": true
+        }
+      }
+    }
+  ]
+}

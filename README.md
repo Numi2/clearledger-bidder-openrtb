@@ -46,6 +46,7 @@ No-bid is `204 No Content`. Malformed OpenRTB is `400`.
 
 ```bash
 make test
+make configcheck
 make run
 curl -i http://localhost:8080/readyz
 curl -i -X POST http://localhost:8080/openrtb \
@@ -111,7 +112,15 @@ go run ./cmd/certify \
   -signing-secret "$BIDDER_OPENRTB_SIGNING_SECRET"
 ```
 
-The harness checks readiness, production ClearLedger signature headers, valid bid response shape, controlled no-bid, malformed request rejection, and OpenRTB bid-response validation.
+The harness checks readiness, production ClearLedger signature headers, valid bid response shape for video, audio, display, and native samples, controlled no-bid, malformed request rejection, and OpenRTB bid-response validation.
+
+Run one sample only when debugging a specific format:
+
+```bash
+go run ./cmd/certify \
+  -endpoint https://agency-bidder.example.com/openrtb \
+  -sample samples/openrtb-video-request.json
+```
 
 ## ClearLedger Lane Harness
 
@@ -140,3 +149,13 @@ This does not require a bidder website. The agency/operator flow is CLI/API firs
 4. Optionally run `cmd/clearledger-harness` with a ClearLedger-style runtime manifest for local lane proof.
 5. Submit the approved-buyer registration payload to ClearLedger.
 6. ClearLedger publishes the approved buyer in the Redis runtime manifest and starts signed OpenRTB fanout.
+
+## Compose
+
+For local container smoke testing:
+
+```bash
+docker compose up --build
+```
+
+Docker is optional; the bidder is just a Go HTTP process.

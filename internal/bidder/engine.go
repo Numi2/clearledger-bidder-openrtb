@@ -78,7 +78,7 @@ func (e *Engine) Bid(ctx context.Context, req *openrtb.BidRequest, received time
 	if !best.ok {
 		return Decision{NoBid: true, Reason: "no_eligible_campaign"}
 	}
-	if !e.reserve(best.campaign.ID, best.price, best.campaign.DailyBudget, best.campaign.QPS) {
+	if !e.reserve(best.campaign, best.price, received) {
 		return Decision{NoBid: true, Reason: "budget_or_qps_exhausted"}
 	}
 
@@ -152,34 +152,56 @@ func (e *Engine) evaluate(req *openrtb.BidRequest, imp openrtb.Impression, campa
 	return candidate{ok: true, campaign: campaign, creative: creative, imp: imp, dealID: dealID, price: campaign.BidCPM}, true
 }
 
-func (e *Engine) reserve(campaignID string, priceCPM, dailyBudget float64, qps int) bool {
+func (e *Engine) reserve(campaign config.Campaign, priceCPM float64, now time.Time) bool {
 	e.mu.Lock()
 	defer e.mu.Unlock()
-	day := time.Now().UTC().Format("2006-01-02")
+	day := now.UTC().Format("2006-01-02")
 	if e.dayKey != day {
 		e.spend = map[string]float64{}
 		e.qps = map[string]rateState{}
 		e.dayKey = day
 	}
-	if qps > 0 {
-		nowSec := time.Now().Unix()
-		state := e.qps[campaignID]
+	if campaign.QPS > 0 {
+		nowSec := now.Unix()
+		state := e.qps[campaign.ID]
 		if state.sec != nowSec {
 			state = rateState{sec: nowSec}
 		}
-		if state.count >= qps {
-			e.qps[campaignID] = state
+		if state.count >= campaign.QPS {
+			e.qps[campaign.ID] = state
 			return false
 		}
 		state.count++
-		e.qps[campaignID] = state
+		e.qps[campaign.ID] = state
 	}
-	next := e.spend[campaignID] + priceCPM/1000
-	if dailyBudget > 0 && next > dailyBudget {
+	next := e.spend[campaign.ID] + priceCPM/1000
+	if campaign.DailyBudget > 0 && next > campaign.DailyBudget {
 		return false
 	}
-	e.spend[campaignID] = next
+	if !pacingAllows(campaign, next, now) {
+		return false
+	}
+	e.spend[campaign.ID] = next
 	return true
+}
+
+func pacingAllows(campaign config.Campaign, nextSpend float64, now time.Time) bool {
+	if !strings.EqualFold(strings.TrimSpace(campaign.PacingMode), "even") || campaign.DailyBudget <= 0 {
+		return true
+	}
+	tolerance := campaign.PacingTolerance
+	if tolerance <= 0 {
+		tolerance = 1.25
+	}
+	utc := now.UTC()
+	elapsed := time.Duration(utc.Hour())*time.Hour + time.Duration(utc.Minute())*time.Minute + time.Duration(utc.Second())*time.Second
+	fraction := math.Max(float64(elapsed)/float64(24*time.Hour), 1.0/1440.0)
+	allowed := campaign.DailyBudget * fraction * tolerance
+	minOneBid := campaign.BidCPM / 1000
+	if allowed < minOneBid {
+		allowed = minOneBid
+	}
+	return nextSpend <= allowed
 }
 
 func allowedSupply(req *openrtb.BidRequest, imp openrtb.Impression, c config.Campaign) bool {
@@ -268,7 +290,11 @@ func renderMarkup(imp openrtb.Impression, cr config.Creative, impURL string) str
 		if duration <= 0 {
 			duration = 30
 		}
-		return fmt.Sprintf(`<VAST version="4.3"><Ad id="%s"><InLine><AdSystem>ClearLedger Bidder OpenRTB</AdSystem><AdTitle>%s</AdTitle><Impression><![CDATA[%s]]></Impression><Creatives><Creative id="%s"><Linear><Duration>00:00:%02d</Duration><MediaFiles><MediaFile delivery="progressive" type="video/mp4" width="%d" height="%d"><![CDATA[%s]]></MediaFile></MediaFiles><VideoClicks><ClickThrough><![CDATA[%s]]></ClickThrough></VideoClicks></Linear></Creative></Creatives></InLine></Ad></VAST>`, cr.ID, cr.ID, impURL, cr.ID, duration, max(cr.W, 640), max(cr.H, 360), cr.AssetURL, cr.LandingURL)
+		mime := "video/mp4"
+		if imp.MediaType() == "audio" {
+			mime = "audio/mpeg"
+		}
+		return fmt.Sprintf(`<VAST version="4.3"><Ad id="%s"><InLine><AdSystem>ClearLedger Bidder OpenRTB</AdSystem><AdTitle>%s</AdTitle><Impression><![CDATA[%s]]></Impression><Creatives><Creative id="%s"><Linear><Duration>00:00:%02d</Duration><MediaFiles><MediaFile delivery="progressive" type="%s" width="%d" height="%d"><![CDATA[%s]]></MediaFile></MediaFiles><VideoClicks><ClickThrough><![CDATA[%s]]></ClickThrough></VideoClicks></Linear></Creative></Creatives></InLine></Ad></VAST>`, cr.ID, cr.ID, impURL, cr.ID, duration, mime, max(cr.W, 640), max(cr.H, 360), cr.AssetURL, cr.LandingURL)
 	case "native":
 		body, _ := json.Marshal(map[string]any{"native": map[string]any{"link": map[string]any{"url": cr.LandingURL}, "assets": []map[string]any{{"id": 1, "title": map[string]any{"text": cr.ID}}}, "imptrackers": []string{impURL}}})
 		return string(body)
@@ -310,7 +336,8 @@ func stableID(prefix string, parts ...string) string {
 func contains(values []string, needle string) bool {
 	needle = strings.ToLower(strings.TrimSpace(needle))
 	for _, value := range values {
-		if strings.ToLower(strings.TrimSpace(value)) == needle {
+		value = strings.ToLower(strings.TrimSpace(value))
+		if value == needle || (value == "banner" && needle == "display") {
 			return true
 		}
 	}

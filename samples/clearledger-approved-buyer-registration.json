@@ -14,7 +14,7 @@
       "X-ClearLedger-Buyer-Signature"
     ]
   },
-  "supported_media": ["video", "display", "native"],
+  "supported_media": ["video", "audio", "display", "native"],
   "no_bid": {
     "http_status": 204
   }

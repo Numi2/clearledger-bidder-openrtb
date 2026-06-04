@@ -31,6 +31,8 @@ type Campaign struct {
 	Seat              string     `json:"seat,omitempty"`
 	BidCPM            float64    `json:"bid_cpm"`
 	DailyBudget       float64    `json:"daily_budget"`
+	PacingMode        string     `json:"pacing_mode,omitempty"`
+	PacingTolerance   float64    `json:"pacing_tolerance,omitempty"`
 	QPS               int        `json:"qps,omitempty"`
 	AllowedApps       []string   `json:"allowed_apps,omitempty"`
 	AllowedBundles    []string   `json:"allowed_bundles,omitempty"`
@@ -111,13 +113,78 @@ func validateCampaign(c Campaign) error {
 	if c.DailyBudget < 0 {
 		return fmt.Errorf("campaign %s daily_budget must be non-negative", c.ID)
 	}
+	switch normalizeToken(c.PacingMode) {
+	case "", "asap", "even":
+	default:
+		return fmt.Errorf("campaign %s pacing_mode must be asap or even", c.ID)
+	}
+	if c.PacingTolerance < 0 {
+		return fmt.Errorf("campaign %s pacing_tolerance must be non-negative", c.ID)
+	}
 	if len(c.MediaTypes) == 0 {
 		return fmt.Errorf("campaign %s needs at least one media type", c.ID)
 	}
 	if len(c.Creatives) == 0 {
 		return fmt.Errorf("campaign %s needs at least one creative", c.ID)
 	}
+	mediaTypes := map[string]struct{}{}
+	for _, mediaType := range c.MediaTypes {
+		mediaType = normalizeMediaType(mediaType)
+		if mediaType == "" {
+			return fmt.Errorf("campaign %s contains an empty media type", c.ID)
+		}
+		mediaTypes[mediaType] = struct{}{}
+	}
+	approved := 0
+	for _, creative := range c.Creatives {
+		if creative.ID == "" {
+			return fmt.Errorf("campaign %s creative id is required", c.ID)
+		}
+		mediaType := normalizeMediaType(creative.MediaType)
+		if _, ok := mediaTypes[mediaType]; !ok {
+			return fmt.Errorf("campaign %s creative %s media_type is not in campaign media_types", c.ID, creative.ID)
+		}
+		if len(creative.Adomain) == 0 {
+			return fmt.Errorf("campaign %s creative %s adomain is required", c.ID, creative.ID)
+		}
+		if creative.Approved {
+			approved++
+		}
+		if creative.Markup == "" {
+			switch mediaType {
+			case "video", "audio":
+				if creative.AssetURL == "" {
+					return fmt.Errorf("campaign %s creative %s asset_url is required for %s", c.ID, creative.ID, mediaType)
+				}
+			case "display":
+				if creative.AssetURL == "" || creative.LandingURL == "" {
+					return fmt.Errorf("campaign %s creative %s asset_url and landing_url are required for display", c.ID, creative.ID)
+				}
+			case "native":
+				if creative.LandingURL == "" {
+					return fmt.Errorf("campaign %s creative %s landing_url is required for native", c.ID, creative.ID)
+				}
+			default:
+				return fmt.Errorf("campaign %s creative %s unsupported media_type %s", c.ID, creative.ID, creative.MediaType)
+			}
+		}
+	}
+	if approved == 0 {
+		return fmt.Errorf("campaign %s needs at least one approved creative", c.ID)
+	}
 	return nil
+}
+
+func normalizeMediaType(value string) string {
+	value = normalizeToken(value)
+	if value == "banner" {
+		return "display"
+	}
+	return value
+}
+
+func normalizeToken(value string) string {
+	return strings.ToLower(strings.ReplaceAll(strings.TrimSpace(value), "-", "_"))
 }
 
 func getenv(key, fallback string) string {

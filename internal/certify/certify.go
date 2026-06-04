@@ -23,6 +23,7 @@ type Options struct {
 	Token         string
 	SigningSecret string
 	SamplePath    string
+	SamplePaths   []string
 	Timeout       time.Duration
 }
 
@@ -41,16 +42,10 @@ func Run(ctx context.Context, options Options) (Report, error) {
 	if options.Endpoint == "" {
 		return Report{}, fmt.Errorf("endpoint is required")
 	}
-	if options.SamplePath == "" {
-		options.SamplePath = "samples/openrtb-video-request.json"
-	}
 	if options.Timeout <= 0 {
 		options.Timeout = 2 * time.Second
 	}
-	sample, err := os.ReadFile(options.SamplePath)
-	if err != nil {
-		return Report{}, err
-	}
+	samplePaths := resolvedSamplePaths(options)
 	client := &http.Client{Timeout: options.Timeout}
 	report := Report{OK: true}
 	add := func(name string, ok bool, detail string) {
@@ -61,34 +56,73 @@ func Run(ctx context.Context, options Options) (Report, error) {
 	}
 
 	add("readyz", ready(ctx, client, options.Endpoint), "")
-	req, err := openrtb.DecodeRequest(sample)
-	if err != nil {
-		add("sample_request_valid", false, err.Error())
-		return report, nil
-	}
-	add("sample_request_valid", true, "")
+	for _, samplePath := range samplePaths {
+		sample, err := os.ReadFile(samplePath)
+		label := sampleLabel(samplePath)
+		if err != nil {
+			add(label+"_readable", false, err.Error())
+			continue
+		}
+		add(label+"_readable", true, "")
+		req, err := openrtb.DecodeRequest(sample)
+		if err != nil {
+			add(label+"_request_valid", false, err.Error())
+			continue
+		}
+		add(label+"_request_valid", true, "")
 
-	status, body, err := postOpenRTB(ctx, client, options, sample)
-	if err != nil {
-		add("valid_bid_http", false, err.Error())
-	} else {
-		add("valid_bid_http", status == http.StatusOK, fmt.Sprintf("status=%d", status))
-		var resp openrtb.BidResponse
-		if err := json.Unmarshal(body, &resp); err != nil {
-			add("valid_bid_json", false, err.Error())
+		status, body, err := postOpenRTB(ctx, client, options, sample)
+		if err != nil {
+			add(label+"_valid_bid_http", false, err.Error())
 		} else {
-			add("valid_bid_json", true, "")
-			add("valid_bid_contract", openrtb.ValidateBidResponse(req, &resp) == nil, validationDetail(req, &resp))
+			add(label+"_valid_bid_http", status == http.StatusOK, fmt.Sprintf("status=%d", status))
+			var resp openrtb.BidResponse
+			if err := json.Unmarshal(body, &resp); err != nil {
+				add(label+"_valid_bid_json", false, err.Error())
+			} else {
+				add(label+"_valid_bid_json", true, "")
+				add(label+"_valid_bid_contract", openrtb.ValidateBidResponse(req, &resp) == nil, validationDetail(req, &resp))
+			}
 		}
 	}
 
+	sample, err := os.ReadFile(samplePaths[0])
+	if err != nil {
+		return report, nil
+	}
 	noBidBody, _ := mutateFloor(sample, 999999)
-	status, _, err = postOpenRTB(ctx, client, options, noBidBody)
+	status, _, err := postOpenRTB(ctx, client, options, noBidBody)
 	add("clean_no_bid", err == nil && status == http.StatusNoContent, statusDetail(status, err))
 
 	status, _, err = postOpenRTB(ctx, client, options, []byte(`{"id":"bad","site":{"domain":"example.com"},"imp":[]}`))
 	add("malformed_rejected", err == nil && status == http.StatusBadRequest, statusDetail(status, err))
 	return report, nil
+}
+
+func resolvedSamplePaths(options Options) []string {
+	if len(options.SamplePaths) > 0 {
+		return options.SamplePaths
+	}
+	if strings.TrimSpace(options.SamplePath) != "" {
+		return []string{options.SamplePath}
+	}
+	return []string{
+		"samples/openrtb-video-request.json",
+		"samples/openrtb-audio-request.json",
+		"samples/openrtb-display-request.json",
+		"samples/openrtb-native-request.json",
+	}
+}
+
+func sampleLabel(path string) string {
+	name := path
+	if idx := strings.LastIndex(name, "/"); idx >= 0 {
+		name = name[idx+1:]
+	}
+	name = strings.TrimSuffix(name, ".json")
+	name = strings.TrimPrefix(name, "openrtb-")
+	name = strings.TrimSuffix(name, "-request")
+	return strings.NewReplacer("-", "_", ".", "_").Replace(name)
 }
 
 func ready(ctx context.Context, client *http.Client, endpoint string) bool {

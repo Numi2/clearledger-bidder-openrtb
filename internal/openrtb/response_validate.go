@@ -12,6 +12,9 @@ func ValidateBidResponse(req *BidRequest, resp *BidResponse) error {
 	if resp.ID != req.ID {
 		return fmt.Errorf("response id must match request id")
 	}
+	if resp.Cur != "" && len(req.Cur) > 0 && !containsFold(req.Cur, resp.Cur) {
+		return fmt.Errorf("response currency not allowed by request")
+	}
 	impIDs := map[string]Impression{}
 	dealIDs := map[string]struct{}{}
 	floors := map[string]float64{}
@@ -50,6 +53,9 @@ func ValidateBidResponse(req *BidRequest, resp *BidResponse) error {
 			if bid.AdM == "" {
 				return fmt.Errorf("adm is required")
 			}
+			if bid.NURL == "" && bid.BURL == "" && bid.LURL == "" && !hasClearLedgerExt(bid.Ext) {
+				return fmt.Errorf("bid requires notice URLs or ext.clearledger proof fields")
+			}
 			if len(dealIDs) > 0 {
 				if bid.DealID == "" {
 					return fmt.Errorf("dealid is required for PMP requests")
@@ -65,5 +71,23 @@ func ValidateBidResponse(req *BidRequest, resp *BidResponse) error {
 
 func LooksLikeVAST(adm string) bool {
 	trimmed := strings.TrimSpace(adm)
-	return strings.HasPrefix(trimmed, "<VAST") && strings.Contains(trimmed, "<Impression") && strings.Contains(trimmed, "<MediaFile")
+	upper := strings.ToUpper(trimmed)
+	return strings.HasPrefix(upper, "<VAST") && strings.Contains(upper, "<IMPRESSION") && strings.Contains(upper, "<MEDIAFILE")
+}
+
+func hasClearLedgerExt(ext map[string]any) bool {
+	if ext == nil {
+		return false
+	}
+	_, ok := ext["clearledger"]
+	return ok
+}
+
+func containsFold(values []string, needle string) bool {
+	for _, value := range values {
+		if strings.EqualFold(strings.TrimSpace(value), strings.TrimSpace(needle)) {
+			return true
+		}
+	}
+	return false
 }

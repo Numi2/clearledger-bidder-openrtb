@@ -9,6 +9,7 @@
       "enabled": true,
       "bid_cpm": 9.25,
       "daily_budget": 100.0,
+      "pacing_mode": "asap",
       "qps": 100,
       "allowed_bundles": ["com.example.app"],
       "allowed_placements": ["placement_123"],
@@ -24,6 +25,28 @@
           "duration": 30,
           "w": 1280,
           "h": 720,
+          "approved": true
+        }
+      ]
+    },
+    {
+      "id": "campaign_audio_1",
+      "enabled": true,
+      "bid_cpm": 7.5,
+      "daily_budget": 75.0,
+      "qps": 100,
+      "allowed_bundles": ["com.example.app"],
+      "allowed_placements": ["audio_1"],
+      "deal_ids": ["deal_clearledger_audio_1"],
+      "media_types": ["audio"],
+      "creatives": [
+        {
+          "id": "creative_audio_1",
+          "adomain": ["advertiser.com"],
+          "media_type": "audio",
+          "asset_url": "https://cdn.example.com/audio.mp3",
+          "landing_url": "https://advertiser.com",
+          "duration": 30,
           "approved": true
         }
       ]

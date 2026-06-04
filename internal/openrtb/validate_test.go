@@ -28,6 +28,7 @@ func TestValidateBidResponse(t *testing.T) {
 				Adomain: []string{"advertiser.com"},
 				DealID:  "deal_clearledger_123",
 				AdM:     `<VAST version="4.3"><Ad><InLine><Impression>https://example.com/i</Impression><Creatives><Creative><Linear><MediaFiles><MediaFile>https://example.com/a.mp4</MediaFile></MediaFiles></Linear></Creative></Creatives></InLine></Ad></VAST>`,
+				Ext:     map[string]any{"clearledger": map[string]any{"buyer_id": "buyer"}},
 			}},
 		}},
 	}
@@ -50,6 +51,44 @@ func TestDecodeRequestAllowsExtensions(t *testing.T) {
 		t.Fatal(err)
 	}
 	if _, err := DecodeRequest(body); err != nil {
+		t.Fatal(err)
+	}
+}
+
+func TestDecodeRequestRejectsTrailingJSON(t *testing.T) {
+	body := []byte(`{"id":"a","site":{"domain":"example.com"},"imp":[{"id":"1","banner":{"w":1,"h":1}}]} {"id":"b"}`)
+	if _, err := DecodeRequest(body); err == nil {
+		t.Fatal("expected trailing JSON rejection")
+	}
+}
+
+func TestValidateBidResponseRequiresNoticeOrProofExt(t *testing.T) {
+	req := &BidRequest{
+		ID:   "auction",
+		Cur:  []string{"USD"},
+		Site: &Site{Domain: "example.com"},
+		Imp:  []Impression{{ID: "1", BidFloor: 1, Banner: &Banner{W: 300, H: 250}}},
+	}
+	resp := &BidResponse{
+		ID:  "auction",
+		Cur: "USD",
+		SeatBid: []SeatBid{{
+			Seat: "seat",
+			Bid: []Bid{{
+				ID:      "bid",
+				ImpID:   "1",
+				Price:   1,
+				CrID:    "creative",
+				Adomain: []string{"advertiser.com"},
+				AdM:     "<div>ad</div>",
+			}},
+		}},
+	}
+	if err := ValidateBidResponse(req, resp); err == nil {
+		t.Fatal("expected missing notices/proof ext rejection")
+	}
+	resp.SeatBid[0].Bid[0].NURL = "https://bidder.example/win"
+	if err := ValidateBidResponse(req, resp); err != nil {
 		t.Fatal(err)
 	}
 }

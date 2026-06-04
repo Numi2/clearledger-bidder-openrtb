@@ -1,0 +1,44 @@
+{
+  "id": "audio_auction_123",
+  "tmax": 250,
+  "at": 1,
+  "cur": ["USD"],
+  "app": {
+    "id": "app_123",
+    "name": "Example App",
+    "bundle": "com.example.app"
+  },
+  "device": {
+    "ua": "Mozilla/5.0",
+    "ip": "203.0.113.10",
+    "ifa": "00000000-0000-0000-0000-000000000000",
+    "lmt": 0
+  },
+  "regs": { "coppa": 0 },
+  "imp": [
+    {
+      "id": "1",
+      "secure": 1,
+      "bidfloor": 7.0,
+      "bidfloorcur": "USD",
+      "tagid": "audio_1",
+      "audio": {
+        "mimes": ["audio/mpeg"],
+        "minduration": 5,
+        "maxduration": 30,
+        "protocols": [2, 3, 5, 6]
+      },
+      "pmp": {
+        "private_auction": 1,
+        "deals": [{ "id": "deal_clearledger_audio_1", "bidfloor": 7.0, "bidfloorcur": "USD", "at": 1 }]
+      },
+      "ext": {
+        "clearledger": {
+          "lane_id": "lane_audio",
+          "placement_id": "audio_1",
+          "receipt_required": true
+        }
+      }
+    }
+  ]
+}
