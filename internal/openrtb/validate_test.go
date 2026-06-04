@@ -27,7 +27,7 @@ func TestValidateBidResponse(t *testing.T) {
 				CrID:    "creative_1",
 				Adomain: []string{"advertiser.com"},
 				DealID:  "deal_clearledger_123",
-				AdM:     `<VAST version="4.3"><Ad><InLine><Impression>https://example.com/i</Impression><Creatives><Creative><Linear><Duration>00:00:30</Duration><MediaFiles><MediaFile>https://example.com/a.mp4</MediaFile></MediaFiles></Linear></Creative></Creatives></InLine></Ad></VAST>`,
+				AdM:     `<VAST version="4.3"><Ad><InLine><Impression>https://example.com/i</Impression><Creatives><Creative><Linear><Duration>00:00:30</Duration><MediaFiles><MediaFile delivery="progressive" type="video/mp4" width="1280" height="720">https://example.com/a.mp4</MediaFile></MediaFiles></Linear></Creative></Creatives></InLine></Ad></VAST>`,
 				Ext: map[string]any{"clearledger": map[string]any{
 					"buyer_id":         "buyer",
 					"campaign_id":      "campaign",
@@ -178,6 +178,43 @@ func TestValidateBidResponseRejectsWrongMediaMarkup(t *testing.T) {
 	}
 	if err := ValidateBidResponse(req, resp); err == nil {
 		t.Fatal("expected video response with display adm to fail")
+	}
+}
+
+func TestValidateBidResponseRejectsVASTOutsideMediaConstraints(t *testing.T) {
+	req := &BidRequest{
+		ID:  "auction",
+		Cur: []string{"USD"},
+		App: &App{Bundle: "com.example.app"},
+		Imp: []Impression{{
+			ID:       "1",
+			Secure:   1,
+			BidFloor: 1,
+			Video:    &Video{Mimes: []string{"video/mp4"}, MinDuration: 5, MaxDuration: 30, W: 1280, H: 720},
+		}},
+	}
+	resp := &BidResponse{
+		ID:  "auction",
+		Cur: "USD",
+		SeatBid: []SeatBid{{
+			Seat: "seat",
+			Bid: []Bid{{
+				ID:      "bid",
+				ImpID:   "1",
+				Price:   1,
+				CrID:    "creative",
+				Adomain: []string{"advertiser.com"},
+				AdM:     `<VAST version="4.3"><Ad><InLine><Impression>https://example.com/i</Impression><Creatives><Creative><Linear><Duration>00:00:45</Duration><MediaFiles><MediaFile delivery="progressive" type="video/webm" width="640" height="360">https://example.com/a.webm</MediaFile></MediaFiles></Linear></Creative></Creatives></InLine></Ad></VAST>`,
+				NURL:    "https://bidder.example/win",
+			}},
+		}},
+	}
+	if err := ValidateBidResponse(req, resp); err == nil {
+		t.Fatal("expected VAST media constraints to fail")
+	}
+	resp.SeatBid[0].Bid[0].AdM = `<VAST version="4.3"><Ad><InLine><Impression>https://example.com/i</Impression><Creatives><Creative><Linear><Duration>00:00:30</Duration><MediaFiles><MediaFile delivery="progressive" type="video/mp4" width="1280" height="720">https://example.com/a.mp4</MediaFile></MediaFiles></Linear></Creative></Creatives></InLine></Ad></VAST>`
+	if err := ValidateBidResponse(req, resp); err != nil {
+		t.Fatal(err)
 	}
 }
 

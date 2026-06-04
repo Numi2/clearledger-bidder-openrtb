@@ -2,7 +2,10 @@ package openrtb
 
 import (
 	"encoding/json"
+	"encoding/xml"
 	"fmt"
+	"io"
+	"strconv"
 	"strings"
 )
 
@@ -57,6 +60,9 @@ func ValidateBidResponse(req *BidRequest, resp *BidResponse) error {
 			if err := ValidateAdMarkup(impIDs[bid.ImpID], bid.AdM); err != nil {
 				return err
 			}
+			if err := validateBidMediaConstraints(impIDs[bid.ImpID], bid); err != nil {
+				return err
+			}
 			if bid.NURL == "" && bid.BURL == "" && bid.LURL == "" && !hasClearLedgerExt(bid.Ext) {
 				return fmt.Errorf("bid requires notice URLs or ext.clearledger proof fields")
 			}
@@ -79,8 +85,8 @@ func ValidateBidResponse(req *BidRequest, resp *BidResponse) error {
 func ValidateAdMarkup(imp Impression, adm string) error {
 	switch imp.MediaType() {
 	case "video", "audio":
-		if !LooksLikeVAST(adm) {
-			return fmt.Errorf("adm must be VAST for %s impressions", imp.MediaType())
+		if err := validateVASTMarkup(imp, adm); err != nil {
+			return err
 		}
 	case "native":
 		if !LooksLikeNativeAdM(adm) {
@@ -97,12 +103,7 @@ func ValidateAdMarkup(imp Impression, adm string) error {
 }
 
 func LooksLikeVAST(adm string) bool {
-	trimmed := strings.TrimSpace(adm)
-	upper := strings.ToUpper(trimmed)
-	return strings.HasPrefix(upper, "<VAST") &&
-		strings.Contains(upper, "<IMPRESSION") &&
-		strings.Contains(upper, "<MEDIAFILE") &&
-		strings.Contains(upper, "<DURATION>")
+	return parseVAST(adm).shapeOK()
 }
 
 func LooksLikeDisplayAdM(adm string) bool {
@@ -126,6 +127,198 @@ func LooksLikeNativeAdM(adm string) bool {
 		return false
 	}
 	return len(body.Native.Assets) > 0 && strings.TrimSpace(body.Native.Link.URL) != ""
+}
+
+func validateBidMediaConstraints(imp Impression, bid Bid) error {
+	switch imp.MediaType() {
+	case "display":
+		if imp.Banner == nil {
+			return nil
+		}
+		if imp.Banner.W > 0 && bid.W > 0 && bid.W != imp.Banner.W {
+			return fmt.Errorf("bid width does not match banner request")
+		}
+		if imp.Banner.H > 0 && bid.H > 0 && bid.H != imp.Banner.H {
+			return fmt.Errorf("bid height does not match banner request")
+		}
+	case "video":
+		if imp.Video == nil {
+			return nil
+		}
+		info := parseVAST(bid.AdM)
+		if imp.Video.W > 0 && info.mediaWidth > 0 && info.mediaWidth != imp.Video.W {
+			return fmt.Errorf("VAST media width does not match video request")
+		}
+		if imp.Video.H > 0 && info.mediaHeight > 0 && info.mediaHeight != imp.Video.H {
+			return fmt.Errorf("VAST media height does not match video request")
+		}
+	}
+	return nil
+}
+
+type vastInfo struct {
+	hasRoot       bool
+	hasImpression bool
+	hasMediaFile  bool
+	hasDuration   bool
+	duration      float64
+	mediaTypes    []string
+	mediaWidth    int
+	mediaHeight   int
+	parseErr      error
+}
+
+func (v vastInfo) shapeOK() bool {
+	return v.parseErr == nil && v.hasRoot && v.hasImpression && v.hasMediaFile && v.hasDuration
+}
+
+func validateVASTMarkup(imp Impression, adm string) error {
+	info := parseVAST(adm)
+	if !info.shapeOK() {
+		return fmt.Errorf("adm must be VAST for %s impressions", imp.MediaType())
+	}
+	var mimes []string
+	minDuration := 0
+	maxDuration := 0
+	switch imp.MediaType() {
+	case "video":
+		if imp.Video != nil {
+			mimes = imp.Video.Mimes
+			minDuration = imp.Video.MinDuration
+			maxDuration = imp.Video.MaxDuration
+		}
+	case "audio":
+		if imp.Audio != nil {
+			mimes = imp.Audio.Mimes
+			minDuration = imp.Audio.MinDuration
+			maxDuration = imp.Audio.MaxDuration
+		}
+	}
+	if minDuration > 0 && info.duration > 0 && info.duration < float64(minDuration) {
+		return fmt.Errorf("VAST duration below request minimum")
+	}
+	if maxDuration > 0 && info.duration > 0 && info.duration > float64(maxDuration) {
+		return fmt.Errorf("VAST duration above request maximum")
+	}
+	if len(mimes) > 0 {
+		for _, mediaType := range info.mediaTypes {
+			if strings.TrimSpace(mediaType) == "" {
+				return fmt.Errorf("VAST MediaFile type is required when request mimes are present")
+			}
+			if containsFold(mimes, mediaType) {
+				return nil
+			}
+		}
+		return fmt.Errorf("VAST MediaFile type not allowed by request mimes")
+	}
+	return nil
+}
+
+func parseVAST(adm string) vastInfo {
+	decoder := xml.NewDecoder(strings.NewReader(adm))
+	info := vastInfo{}
+	var inImpression, inDuration, inMediaFile bool
+	var impressionText, durationText, mediaText strings.Builder
+	currentMediaType := ""
+	currentMediaWidth := 0
+	currentMediaHeight := 0
+	for {
+		token, err := decoder.Token()
+		if err != nil {
+			if err == io.EOF {
+				return info
+			}
+			info.parseErr = err
+			return info
+		}
+		switch t := token.(type) {
+		case xml.StartElement:
+			name := strings.ToLower(t.Name.Local)
+			switch name {
+			case "vast":
+				info.hasRoot = true
+			case "impression":
+				inImpression = true
+				impressionText.Reset()
+			case "duration":
+				inDuration = true
+				durationText.Reset()
+			case "mediafile":
+				inMediaFile = true
+				mediaText.Reset()
+				currentMediaType = ""
+				currentMediaWidth = 0
+				currentMediaHeight = 0
+				for _, attr := range t.Attr {
+					switch strings.ToLower(attr.Name.Local) {
+					case "type":
+						currentMediaType = strings.TrimSpace(attr.Value)
+					case "width":
+						currentMediaWidth, _ = strconv.Atoi(strings.TrimSpace(attr.Value))
+					case "height":
+						currentMediaHeight, _ = strconv.Atoi(strings.TrimSpace(attr.Value))
+					}
+				}
+			}
+		case xml.CharData:
+			if inImpression {
+				impressionText.Write([]byte(t))
+			}
+			if inDuration {
+				durationText.Write([]byte(t))
+			}
+			if inMediaFile {
+				mediaText.Write([]byte(t))
+			}
+		case xml.EndElement:
+			name := strings.ToLower(t.Name.Local)
+			switch name {
+			case "impression":
+				if strings.TrimSpace(impressionText.String()) != "" {
+					info.hasImpression = true
+				}
+				inImpression = false
+			case "duration":
+				if seconds, ok := parseVASTDuration(durationText.String()); ok {
+					info.hasDuration = true
+					info.duration = seconds
+				}
+				inDuration = false
+			case "mediafile":
+				if strings.TrimSpace(mediaText.String()) != "" {
+					info.hasMediaFile = true
+					info.mediaTypes = append(info.mediaTypes, currentMediaType)
+					if info.mediaWidth == 0 {
+						info.mediaWidth = currentMediaWidth
+					}
+					if info.mediaHeight == 0 {
+						info.mediaHeight = currentMediaHeight
+					}
+				}
+				inMediaFile = false
+			}
+		}
+	}
+}
+
+func parseVASTDuration(value string) (float64, bool) {
+	parts := strings.Split(strings.TrimSpace(value), ":")
+	if len(parts) != 3 {
+		return 0, false
+	}
+	hours, err := strconv.Atoi(parts[0])
+	if err != nil {
+		return 0, false
+	}
+	minutes, err := strconv.Atoi(parts[1])
+	if err != nil {
+		return 0, false
+	}
+	seconds, err := strconv.ParseFloat(parts[2], 64)
+	if err != nil {
+		return 0, false
+	}
+	return float64(hours*3600+minutes*60) + seconds, true
 }
 
 func hasClearLedgerExt(ext map[string]any) bool {

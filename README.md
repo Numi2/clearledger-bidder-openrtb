@@ -42,6 +42,8 @@ Bid responses include:
 
 When `imp.ext.clearledger.receipt_required` is true, the validator requires `bid.ext.clearledger` to include buyer, campaign, and creative IDs and to echo any ClearLedger lane/package/placement/proof fields from the request.
 
+For video and audio, `bid.adm` must be parseable VAST with an impression, duration, and media file. When the request declares media constraints, the validator checks VAST duration against `minduration`/`maxduration`, checks `MediaFile type` against requested `mimes`, and checks video media dimensions when both the request and VAST provide dimensions.
+
 No-bid is `204 No Content`. Malformed OpenRTB is `400`.
 
 ## Quickstart
@@ -143,7 +145,7 @@ go run ./cmd/certify \
   -signing-secret "$BIDDER_OPENRTB_SIGNING_SECRET"
 ```
 
-The harness checks readiness, production ClearLedger signature headers, valid bid response shape for video, audio, display, and native samples, controlled no-bid, malformed request rejection, and OpenRTB bid-response validation.
+The harness checks readiness, production ClearLedger signature headers, valid bid response shape for video, audio, display, and native samples, controlled no-bid, malformed request rejection, and OpenRTB bid-response validation including VAST MIME, duration, and dimension constraints.
 
 Run one sample only when debugging a specific format:
 
