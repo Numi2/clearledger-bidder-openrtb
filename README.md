@@ -36,6 +36,7 @@ Bid responses include:
 - response `id` matching the request
 - `seatbid[].seat`
 - `bid.id`, `bid.impid`, `bid.price`, `bid.crid`, `bid.adomain`
+- non-empty `seatbid[].bid`, unique `bid.id`, and at most one bid per impression in a single response
 - `bid.dealid` for PMP inventory
 - `bid.adm` containing VAST for video/audio, display markup for banner, or OpenRTB native response JSON for native
 - `nurl`, `burl`, `lurl` notice URLs

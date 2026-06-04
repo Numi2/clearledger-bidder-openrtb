@@ -37,14 +37,27 @@ func ValidateBidResponse(req *BidRequest, resp *BidResponse) error {
 	if len(resp.SeatBid) == 0 {
 		return fmt.Errorf("seatbid is required for bid responses")
 	}
+	bidIDs := map[string]struct{}{}
+	bidImpIDs := map[string]struct{}{}
 	for _, seatBid := range resp.SeatBid {
 		if seatBid.Seat == "" {
 			return fmt.Errorf("seat is required")
+		}
+		if len(seatBid.Bid) == 0 {
+			return fmt.Errorf("seatbid.bid is required")
 		}
 		for _, bid := range seatBid.Bid {
 			if bid.ID == "" || bid.ImpID == "" || bid.CrID == "" {
 				return fmt.Errorf("bid id, impid, and crid are required")
 			}
+			if _, ok := bidIDs[bid.ID]; ok {
+				return fmt.Errorf("duplicate bid id %q", bid.ID)
+			}
+			bidIDs[bid.ID] = struct{}{}
+			if _, ok := bidImpIDs[bid.ImpID]; ok {
+				return fmt.Errorf("multiple bids for impid %q", bid.ImpID)
+			}
+			bidImpIDs[bid.ImpID] = struct{}{}
 			if _, ok := impIDs[bid.ImpID]; !ok {
 				return fmt.Errorf("bid impid %q does not match request", bid.ImpID)
 			}

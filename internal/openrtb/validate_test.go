@@ -140,6 +140,44 @@ func TestValidateBidResponseRequiresNoticeOrProofExt(t *testing.T) {
 	}
 }
 
+func TestValidateBidResponseRejectsEmptyAndDuplicateBids(t *testing.T) {
+	req := &BidRequest{
+		ID:   "auction",
+		Cur:  []string{"USD"},
+		Site: &Site{Domain: "example.com"},
+		Imp:  []Impression{{ID: "1", BidFloor: 1, Banner: &Banner{W: 300, H: 250}}},
+	}
+	resp := &BidResponse{
+		ID:      "auction",
+		Cur:     "USD",
+		SeatBid: []SeatBid{{Seat: "seat"}},
+	}
+	if err := ValidateBidResponse(req, resp); err == nil {
+		t.Fatal("expected empty bid array to fail")
+	}
+
+	validBid := Bid{
+		ID:      "bid",
+		ImpID:   "1",
+		Price:   1,
+		CrID:    "creative",
+		Adomain: []string{"advertiser.com"},
+		AdM:     `<img src="https://cdn.example/ad.png">`,
+		NURL:    "https://bidder.example/win",
+	}
+	resp.SeatBid = []SeatBid{{Seat: "seat", Bid: []Bid{validBid, validBid}}}
+	if err := ValidateBidResponse(req, resp); err == nil {
+		t.Fatal("expected duplicate bid id to fail")
+	}
+
+	duplicateImpBid := validBid
+	duplicateImpBid.ID = "bid_2"
+	resp.SeatBid = []SeatBid{{Seat: "seat", Bid: []Bid{validBid, duplicateImpBid}}}
+	if err := ValidateBidResponse(req, resp); err == nil {
+		t.Fatal("expected multiple bids for the same impid to fail")
+	}
+}
+
 func TestValidateBidResponseRequiresClearLedgerProofFieldsWhenReceiptRequired(t *testing.T) {
 	req := &BidRequest{
 		ID:   "auction",
