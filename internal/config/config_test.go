@@ -1,6 +1,11 @@
 package config
 
-import "testing"
+import (
+	"os"
+	"path/filepath"
+	"strings"
+	"testing"
+)
 
 func TestLoadHTTPRuntimeDefaults(t *testing.T) {
 	cfg, err := Load("../../config/campaigns.sample.json")
@@ -79,4 +84,114 @@ func TestValidateCampaignAcceptsBannerAlias(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
+}
+
+func TestLoadRejectsDuplicateCampaignIDs(t *testing.T) {
+	path := writeConfig(t, `{
+	  "buyer_id": "buyer",
+	  "seat": "seat",
+	  "currency": "USD",
+	  "campaigns": [
+	    {"id":"campaign","enabled":true,"bid_cpm":1,"daily_budget":1,"media_types":["display"],"creatives":[{"id":"creative_1","adomain":["advertiser.com"],"media_type":"display","asset_url":"https://cdn.example/ad.png","landing_url":"https://advertiser.com","approved":true}]},
+	    {"id":"campaign","enabled":true,"bid_cpm":1,"daily_budget":1,"media_types":["display"],"creatives":[{"id":"creative_2","adomain":["advertiser.com"],"media_type":"display","asset_url":"https://cdn.example/ad.png","landing_url":"https://advertiser.com","approved":true}]}
+	  ]
+	}`)
+	_, err := Load(path)
+	if err == nil || !strings.Contains(err.Error(), "duplicate campaign id") {
+		t.Fatalf("expected duplicate campaign id error, got %v", err)
+	}
+}
+
+func TestValidateCampaignRejectsUnsupportedMediaEvenWithMarkup(t *testing.T) {
+	err := validateCampaign(Campaign{
+		ID:          "campaign",
+		BidCPM:      1,
+		MediaTypes:  []string{"ctv"},
+		DailyBudget: 10,
+		Creatives: []Creative{{
+			ID:        "creative",
+			Adomain:   []string{"advertiser.com"},
+			MediaType: "ctv",
+			Markup:    "<xml></xml>",
+			Approved:  true,
+		}},
+	})
+	if err == nil || !strings.Contains(err.Error(), "unsupported media_type") {
+		t.Fatalf("expected unsupported media error, got %v", err)
+	}
+}
+
+func TestValidateCampaignRejectsDuplicateCreativeIDs(t *testing.T) {
+	err := validateCampaign(Campaign{
+		ID:          "campaign",
+		BidCPM:      1,
+		MediaTypes:  []string{"display"},
+		DailyBudget: 10,
+		Creatives: []Creative{
+			{ID: "creative", Adomain: []string{"advertiser.com"}, MediaType: "display", AssetURL: "https://cdn.example/ad.png", LandingURL: "https://advertiser.com", Approved: true},
+			{ID: "creative", Adomain: []string{"advertiser.com"}, MediaType: "display", AssetURL: "https://cdn.example/ad2.png", LandingURL: "https://advertiser.com", Approved: true},
+		},
+	})
+	if err == nil || !strings.Contains(err.Error(), "duplicate creative id") {
+		t.Fatalf("expected duplicate creative id error, got %v", err)
+	}
+}
+
+func TestValidateCampaignRejectsNegativeOperationalValues(t *testing.T) {
+	for _, tc := range []struct {
+		name     string
+		campaign Campaign
+		want     string
+	}{
+		{
+			name: "negative qps",
+			campaign: Campaign{
+				ID:          "campaign",
+				BidCPM:      1,
+				DailyBudget: 1,
+				QPS:         -1,
+				MediaTypes:  []string{"display"},
+				Creatives:   []Creative{{ID: "creative", Adomain: []string{"advertiser.com"}, MediaType: "display", AssetURL: "https://cdn.example/ad.png", LandingURL: "https://advertiser.com", Approved: true}},
+			},
+			want: "qps must be non-negative",
+		},
+		{
+			name: "negative duration",
+			campaign: Campaign{
+				ID:          "campaign",
+				BidCPM:      1,
+				DailyBudget: 1,
+				MediaTypes:  []string{"video"},
+				Creatives:   []Creative{{ID: "creative", Adomain: []string{"advertiser.com"}, MediaType: "video", AssetURL: "https://cdn.example/ad.mp4", Duration: -1, Approved: true}},
+			},
+			want: "duration must be non-negative",
+		},
+		{
+			name: "negative dimensions",
+			campaign: Campaign{
+				ID:          "campaign",
+				BidCPM:      1,
+				DailyBudget: 1,
+				MediaTypes:  []string{"display"},
+				Creatives:   []Creative{{ID: "creative", Adomain: []string{"advertiser.com"}, MediaType: "display", AssetURL: "https://cdn.example/ad.png", LandingURL: "https://advertiser.com", W: -1, Approved: true}},
+			},
+			want: "dimensions must be non-negative",
+		},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			err := validateCampaign(tc.campaign)
+			if err == nil || !strings.Contains(err.Error(), tc.want) {
+				t.Fatalf("expected %q error, got %v", tc.want, err)
+			}
+		})
+	}
+}
+
+func writeConfig(t *testing.T, body string) string {
+	t.Helper()
+	path := filepath.Join(t.TempDir(), "config.json")
+	if err := os.WriteFile(path, []byte(body), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	return path
 }

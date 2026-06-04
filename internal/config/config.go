@@ -109,9 +109,16 @@ func Load(path string) (Config, error) {
 	if cfg.SignatureSkew <= 0 {
 		return cfg, fmt.Errorf("BIDDER_OPENRTB_SIGNATURE_SKEW_SECONDS must be positive")
 	}
+	campaignIDs := map[string]struct{}{}
 	for i := range cfg.Campaigns {
 		if cfg.Campaigns[i].Seat == "" {
 			cfg.Campaigns[i].Seat = cfg.Seat
+		}
+		if cfg.Campaigns[i].ID != "" {
+			if _, ok := campaignIDs[cfg.Campaigns[i].ID]; ok {
+				return cfg, fmt.Errorf("duplicate campaign id %s", cfg.Campaigns[i].ID)
+			}
+			campaignIDs[cfg.Campaigns[i].ID] = struct{}{}
 		}
 		if err := validateCampaign(cfg.Campaigns[i]); err != nil {
 			return cfg, err
@@ -138,6 +145,9 @@ func validateCampaign(c Campaign) error {
 	if c.PacingTolerance < 0 {
 		return fmt.Errorf("campaign %s pacing_tolerance must be non-negative", c.ID)
 	}
+	if c.QPS < 0 {
+		return fmt.Errorf("campaign %s qps must be non-negative", c.ID)
+	}
 	if len(c.MediaTypes) == 0 {
 		return fmt.Errorf("campaign %s needs at least one media type", c.ID)
 	}
@@ -150,19 +160,36 @@ func validateCampaign(c Campaign) error {
 		if mediaType == "" {
 			return fmt.Errorf("campaign %s contains an empty media type", c.ID)
 		}
+		if !supportedMediaType(mediaType) {
+			return fmt.Errorf("campaign %s unsupported media_type %s", c.ID, mediaType)
+		}
 		mediaTypes[mediaType] = struct{}{}
 	}
 	approved := 0
+	creativeIDs := map[string]struct{}{}
 	for _, creative := range c.Creatives {
 		if creative.ID == "" {
 			return fmt.Errorf("campaign %s creative id is required", c.ID)
 		}
+		if _, ok := creativeIDs[creative.ID]; ok {
+			return fmt.Errorf("campaign %s duplicate creative id %s", c.ID, creative.ID)
+		}
+		creativeIDs[creative.ID] = struct{}{}
 		mediaType := normalizeMediaType(creative.MediaType)
+		if !supportedMediaType(mediaType) {
+			return fmt.Errorf("campaign %s creative %s unsupported media_type %s", c.ID, creative.ID, creative.MediaType)
+		}
 		if _, ok := mediaTypes[mediaType]; !ok {
 			return fmt.Errorf("campaign %s creative %s media_type is not in campaign media_types", c.ID, creative.ID)
 		}
 		if len(creative.Adomain) == 0 {
 			return fmt.Errorf("campaign %s creative %s adomain is required", c.ID, creative.ID)
+		}
+		if creative.Duration < 0 {
+			return fmt.Errorf("campaign %s creative %s duration must be non-negative", c.ID, creative.ID)
+		}
+		if creative.W < 0 || creative.H < 0 {
+			return fmt.Errorf("campaign %s creative %s dimensions must be non-negative", c.ID, creative.ID)
 		}
 		if creative.Approved {
 			approved++
@@ -181,8 +208,6 @@ func validateCampaign(c Campaign) error {
 				if creative.LandingURL == "" {
 					return fmt.Errorf("campaign %s creative %s landing_url is required for native", c.ID, creative.ID)
 				}
-			default:
-				return fmt.Errorf("campaign %s creative %s unsupported media_type %s", c.ID, creative.ID, creative.MediaType)
 			}
 		}
 	}
@@ -190,6 +215,15 @@ func validateCampaign(c Campaign) error {
 		return fmt.Errorf("campaign %s needs at least one approved creative", c.ID)
 	}
 	return nil
+}
+
+func supportedMediaType(value string) bool {
+	switch normalizeMediaType(value) {
+	case "video", "audio", "display", "native":
+		return true
+	default:
+		return false
+	}
 }
 
 func normalizeMediaType(value string) string {

@@ -97,6 +97,8 @@ Each campaign can constrain:
 - creative approval, advertiser domain, landing URL, asset URL, VAST/display/native rendering
 - request currency, PMP Deal currency, media MIME compatibility, creative duration, media dimensions, blocked advertiser domains, COPPA, and limited-ad-tracking constraints
 
+`make configcheck` fails fast on invalid local setup, including unsupported media types, duplicate campaign or creative IDs, negative QPS/duration/dimensions, missing approved creatives, and creatives that cannot serve the declared media type.
+
 ## Operations Endpoints
 
 The bidder exposes production-shaped service endpoints:
