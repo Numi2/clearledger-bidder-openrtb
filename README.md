@@ -156,7 +156,7 @@ go run ./cmd/certify \
   -signing-secret "$BIDDER_OPENRTB_SIGNING_SECRET"
 ```
 
-The harness checks readiness, production ClearLedger identity/signature headers, valid bid response shape for video, audio, display, and native samples, controlled no-bid, malformed request rejection, and OpenRTB bid-response validation including VAST MIME, duration, and dimension constraints.
+The harness checks readiness, production ClearLedger identity/signature headers, valid bid response shape for video, audio, display, and native samples, controlled no-bid, malformed request rejection, and OpenRTB bid-response validation including response currency, approved buyer identity proof, VAST MIME, duration, and dimension constraints.
 
 Run one sample only when debugging a specific format:
 
@@ -168,7 +168,7 @@ go run ./cmd/certify \
 
 ## ClearLedger Lane Harness
 
-For local end-to-end compatibility without private ClearLedger services, run the ClearLedger-side harness. It reads `samples/clearledger-runtime-manifest.local.json`, enforces the active lane and approved buyer route, skips buyers whose protocol or allowed formats do not match the request, applies each buyer's manifest timeout, signs OpenRTB fanout, classifies each buyer as skipped/bid/no-bid/invalid/error, validates bid responses, selects the highest valid bid, builds the VAST/adm supply response, and emits proof steps showing that delivery tracking, billing, settlement, publisher net, ClearLedger fee, and final receipts stay outside the bidder.
+For local end-to-end compatibility without private ClearLedger services, run the ClearLedger-side harness. It reads `samples/clearledger-runtime-manifest.local.json`, enforces the active lane and approved buyer route, skips buyers whose protocol or allowed formats do not match the request, applies each buyer's manifest timeout, signs OpenRTB fanout, classifies each buyer as skipped/bid/no-bid/invalid/error, validates bid responses including currency and `bid.ext.clearledger.buyer_id` against the approved buyer, selects the highest valid bid, builds the VAST/adm supply response, and emits proof steps showing that delivery tracking, billing, settlement, publisher net, ClearLedger fee, and final receipts stay outside the bidder.
 
 ```bash
 export BIDDER_OPENRTB_AUTH_TOKEN='token'

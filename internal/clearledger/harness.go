@@ -412,6 +412,12 @@ func validCandidate(lane Lane, buyer ApprovedBuyer, req openrtb.BidRequest, resp
 	if err := openrtb.ValidateBidResponse(&req, &resp); err != nil {
 		return openrtb.Bid{}, err.Error(), false
 	}
+	if strings.TrimSpace(resp.Cur) == "" {
+		return openrtb.Bid{}, "missing_response_currency", false
+	}
+	if !strings.EqualFold(strings.TrimSpace(resp.Cur), currency(lane.Currency)) {
+		return openrtb.Bid{}, "currency_mismatch", false
+	}
 	expectedSeat := strings.TrimSpace(buyer.SeatID)
 	for _, seat := range resp.SeatBid {
 		if expectedSeat != "" && strings.TrimSpace(seat.Seat) != "" && strings.TrimSpace(seat.Seat) != expectedSeat {
@@ -424,10 +430,27 @@ func validCandidate(lane Lane, buyer ApprovedBuyer, req openrtb.BidRequest, resp
 			if (req.Imp[0].MediaType() == "video" || req.Imp[0].MediaType() == "audio") && !openrtb.LooksLikeVAST(bid.AdM) {
 				return openrtb.Bid{}, "invalid_vast", false
 			}
+			if reason := enforceBuyerProofIdentity(buyer, bid); reason != "" {
+				return openrtb.Bid{}, reason, false
+			}
 			return bid, "", true
 		}
 	}
 	return openrtb.Bid{}, "empty_bid", false
+}
+
+func enforceBuyerProofIdentity(buyer ApprovedBuyer, bid openrtb.Bid) string {
+	ext, ok := bid.Ext["clearledger"].(map[string]any)
+	if !ok {
+		return "missing_clearledger_bid_ext"
+	}
+	if strings.TrimSpace(stringFromAny(ext["buyer_id"])) != strings.TrimSpace(buyer.BuyerID) {
+		return "buyer_id_mismatch"
+	}
+	if strings.TrimSpace(stringFromAny(ext["creative_id"])) != strings.TrimSpace(bid.CrID) {
+		return "creative_id_mismatch"
+	}
+	return ""
 }
 
 func buildSupplyResponse(req openrtb.BidRequest, bid openrtb.Bid) *SupplyResponse {
@@ -511,6 +534,13 @@ func secret(override, envName, inline string) string {
 		}
 	}
 	return strings.TrimSpace(inline)
+}
+
+func stringFromAny(value any) string {
+	if s, ok := value.(string); ok {
+		return s
+	}
+	return ""
 }
 
 func contains(values []string, needle string) bool {

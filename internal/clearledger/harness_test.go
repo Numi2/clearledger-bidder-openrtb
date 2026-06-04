@@ -156,6 +156,62 @@ func TestRunHarnessEnforcesBuyerRouteAndTimeout(t *testing.T) {
 	}
 }
 
+func TestRunHarnessRejectsBuyerIdentityMismatch(t *testing.T) {
+	mux := http.NewServeMux()
+	mux.HandleFunc("/wrong-buyer", func(w http.ResponseWriter, r *http.Request) {
+		writeTestBidResponseWithMutator(t, w, r, "buyer_valid", "seat_valid", 10.00, "deal_clearledger_123", func(resp map[string]any) {
+			bid := firstBid(resp)
+			bid["ext"].(map[string]any)["clearledger"].(map[string]any)["buyer_id"] = "buyer_other"
+		})
+	})
+	srv := httptest.NewServer(mux)
+	defer srv.Close()
+
+	manifestPath := writeManifestWithBuyers(t, []ApprovedBuyer{testBuyer("buyer_valid", "seat_valid", srv.URL+"/wrong-buyer")})
+	report, err := RunHarness(context.Background(), HarnessOptions{
+		ManifestPath:    manifestPath,
+		PrivateMarketID: "pm_cert",
+		SamplePath:      "../../samples/openrtb-video-request.json",
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if report.OK {
+		t.Fatalf("expected report to reject buyer identity mismatch: %#v", report.Checks)
+	}
+	assertOutcome(t, report, "buyer_valid", "invalid_bid")
+	assertReason(t, report, "buyer_valid", "buyer_id_mismatch")
+	if report.Winner != nil {
+		t.Fatalf("expected no winner for mismatched buyer identity: %#v", report.Winner)
+	}
+}
+
+func TestRunHarnessRejectsMissingResponseCurrency(t *testing.T) {
+	mux := http.NewServeMux()
+	mux.HandleFunc("/missing-currency", func(w http.ResponseWriter, r *http.Request) {
+		writeTestBidResponseWithMutator(t, w, r, "buyer_valid", "seat_valid", 10.00, "deal_clearledger_123", func(resp map[string]any) {
+			delete(resp, "cur")
+		})
+	})
+	srv := httptest.NewServer(mux)
+	defer srv.Close()
+
+	manifestPath := writeManifestWithBuyers(t, []ApprovedBuyer{testBuyer("buyer_valid", "seat_valid", srv.URL+"/missing-currency")})
+	report, err := RunHarness(context.Background(), HarnessOptions{
+		ManifestPath:    manifestPath,
+		PrivateMarketID: "pm_cert",
+		SamplePath:      "../../samples/openrtb-video-request.json",
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if report.OK {
+		t.Fatalf("expected report to reject missing response currency: %#v", report.Checks)
+	}
+	assertOutcome(t, report, "buyer_valid", "invalid_bid")
+	assertReason(t, report, "buyer_valid", "missing_response_currency")
+}
+
 func writeManifest(t *testing.T, endpoint string) string {
 	t.Helper()
 	return writeManifestWithBuyers(t, []ApprovedBuyer{{
@@ -213,6 +269,11 @@ func testBuyer(id, seat, endpoint string) ApprovedBuyer {
 
 func writeTestBidResponse(t *testing.T, w http.ResponseWriter, r *http.Request, buyerID, seat string, price float64, dealID string) {
 	t.Helper()
+	writeTestBidResponseWithMutator(t, w, r, buyerID, seat, price, dealID, nil)
+}
+
+func writeTestBidResponseWithMutator(t *testing.T, w http.ResponseWriter, r *http.Request, buyerID, seat string, price float64, dealID string, mutate func(map[string]any)) {
+	t.Helper()
 	var req map[string]any
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
 		t.Fatal(err)
@@ -260,9 +321,16 @@ func writeTestBidResponse(t *testing.T, w http.ResponseWriter, r *http.Request, 
 			}},
 		}},
 	}
+	if mutate != nil {
+		mutate(resp)
+	}
 	if err := json.NewEncoder(w).Encode(resp); err != nil {
 		t.Fatal(err)
 	}
+}
+
+func firstBid(resp map[string]any) map[string]any {
+	return resp["seatbid"].([]map[string]any)[0]["bid"].([]map[string]any)[0]
 }
 
 func assertOutcome(t *testing.T, report Report, buyerID, outcome string) {
