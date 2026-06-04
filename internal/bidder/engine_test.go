@@ -49,23 +49,39 @@ func TestASAPPacingOnlyUsesDailyBudget(t *testing.T) {
 	}
 }
 
-func BenchmarkEngineBidVideoPMP(b *testing.B) {
-	cfg, err := config.Load("../../config/campaigns.sample.json")
-	if err != nil {
-		b.Fatal(err)
+func TestBidRejectsUnsupportedRequestCurrency(t *testing.T) {
+	cfg, req := sampleConfigAndRequest(t)
+	req.Cur = []string{"EUR"}
+	decision := NewEngine(cfg).Bid(context.Background(), req, time.Now().UTC())
+	if !decision.NoBid || decision.Reason != "no_eligible_campaign" {
+		t.Fatalf("expected currency no-bid, got %#v", decision)
 	}
+}
+
+func TestBidRejectsBlockedAdvertiserDomain(t *testing.T) {
+	cfg, req := sampleConfigAndRequest(t)
+	req.BAdv = []string{"advertiser.com"}
+	decision := NewEngine(cfg).Bid(context.Background(), req, time.Now().UTC())
+	if !decision.NoBid || decision.Reason != "no_eligible_campaign" {
+		t.Fatalf("expected badv no-bid, got %#v", decision)
+	}
+}
+
+func TestBidRejectsDealCurrencyMismatch(t *testing.T) {
+	cfg, req := sampleConfigAndRequest(t)
+	req.Imp[0].PMP.Deals[0].BidFloorCur = "EUR"
+	decision := NewEngine(cfg).Bid(context.Background(), req, time.Now().UTC())
+	if !decision.NoBid || decision.Reason != "no_eligible_campaign" {
+		t.Fatalf("expected deal currency no-bid, got %#v", decision)
+	}
+}
+
+func BenchmarkEngineBidVideoPMP(b *testing.B) {
+	cfg, req := sampleConfigAndRequest(b)
 	for i := range cfg.Campaigns {
 		cfg.Campaigns[i].DailyBudget = 1_000_000
 		cfg.Campaigns[i].QPS = 0
 		cfg.Campaigns[i].PacingMode = "asap"
-	}
-	body, err := os.ReadFile("../../samples/openrtb-video-request.json")
-	if err != nil {
-		b.Fatal(err)
-	}
-	req, err := openrtb.DecodeRequest(body)
-	if err != nil {
-		b.Fatal(err)
 	}
 	req.TMax = 0
 	engine := NewEngine(cfg)
@@ -78,4 +94,26 @@ func BenchmarkEngineBidVideoPMP(b *testing.B) {
 			b.Fatalf("unexpected no-bid: %s", decision.Reason)
 		}
 	}
+}
+
+type testingFatalHelper interface {
+	Helper()
+	Fatal(args ...any)
+}
+
+func sampleConfigAndRequest(t testingFatalHelper) (config.Config, *openrtb.BidRequest) {
+	t.Helper()
+	cfg, err := config.Load("../../config/campaigns.sample.json")
+	if err != nil {
+		t.Fatal(err)
+	}
+	body, err := os.ReadFile("../../samples/openrtb-video-request.json")
+	if err != nil {
+		t.Fatal(err)
+	}
+	req, err := openrtb.DecodeRequest(body)
+	if err != nil {
+		t.Fatal(err)
+	}
+	return cfg, req
 }

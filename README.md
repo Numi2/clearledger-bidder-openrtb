@@ -89,7 +89,7 @@ Each campaign can constrain:
 - app ID, bundle, domain, placement, Deal ID, geo, media type
 - CPM bid, daily budget, QPS
 - creative approval, advertiser domain, landing URL, asset URL, VAST/display/native rendering
-- basic privacy handling such as COPPA and limited-ad-tracking constraints
+- request currency, PMP Deal currency, blocked advertiser domains, COPPA, and limited-ad-tracking constraints
 
 ## Operations Endpoints
 
@@ -152,7 +152,7 @@ ClearLedger will still certify the endpoint, enforce the approved buyer lane, va
 
 ## Performance Posture
 
-The bidder keeps the OpenRTB hot path in-process: campaign config is loaded at startup, budget/QPS/pacing state is protected by a short mutex, and bid IDs are deterministic from auction ID, impression ID, campaign ID, and creative ID. Use `make bench` to run the hot-path benchmark before changing auction logic.
+The bidder keeps the OpenRTB hot path in-process: campaign config is loaded and compiled at startup, budget/QPS/pacing state is protected by a short mutex, and bid IDs are deterministic from auction ID, impression ID, campaign ID, and creative ID. Use `make bench` to run the hot-path benchmark before changing auction logic.
 
 ## User Flow
 

@@ -17,17 +17,33 @@ import (
 )
 
 type Engine struct {
-	cfg    config.Config
-	mu     sync.Mutex
-	spend  map[string]float64
-	qps    map[string]rateState
-	dayKey string
+	cfg       config.Config
+	campaigns []compiledCampaign
+	mu        sync.Mutex
+	spend     map[string]float64
+	qps       map[string]rateState
+	dayKey    string
 }
 
 type rateState struct {
 	sec   int64
 	count int
 }
+
+type compiledCampaign struct {
+	cfg               config.Campaign
+	mediaTypes        stringSet
+	allowedApps       stringSet
+	allowedBundles    stringSet
+	allowedDomains    stringSet
+	allowedPlacements stringSet
+	dealIDs           stringSet
+	geoCountries      stringSet
+	creativesByMedia  map[string][]config.Creative
+	approvedCreatives int
+}
+
+type stringSet map[string]struct{}
 
 type Decision struct {
 	Response *openrtb.BidResponse
@@ -56,10 +72,11 @@ type CampaignSnapshot struct {
 
 func NewEngine(cfg config.Config) *Engine {
 	return &Engine{
-		cfg:    cfg,
-		spend:  map[string]float64{},
-		qps:    map[string]rateState{},
-		dayKey: time.Now().UTC().Format("2006-01-02"),
+		cfg:       cfg,
+		campaigns: compileCampaigns(cfg.Campaigns),
+		spend:     map[string]float64{},
+		qps:       map[string]rateState{},
+		dayKey:    time.Now().UTC().Format("2006-01-02"),
 	}
 }
 
@@ -68,14 +85,9 @@ func (e *Engine) Snapshot(now time.Time) []CampaignSnapshot {
 	defer e.mu.Unlock()
 	day := now.UTC().Format("2006-01-02")
 	nowSec := now.Unix()
-	out := make([]CampaignSnapshot, 0, len(e.cfg.Campaigns))
-	for _, campaign := range e.cfg.Campaigns {
-		approved := 0
-		for _, creative := range campaign.Creatives {
-			if creative.Approved {
-				approved++
-			}
-		}
+	out := make([]CampaignSnapshot, 0, len(e.campaigns))
+	for _, compiled := range e.campaigns {
+		campaign := compiled.cfg
 		spend := 0.0
 		if e.dayKey == day {
 			spend = e.spend[campaign.ID]
@@ -99,7 +111,7 @@ func (e *Engine) Snapshot(now time.Time) []CampaignSnapshot {
 			QPSCurrentWindowUnix:  qps.sec,
 			QPSCurrentWindowCount: qpsCount,
 			CreativeCount:         len(campaign.Creatives),
-			ApprovedCreativeCount: approved,
+			ApprovedCreativeCount: compiled.approvedCreatives,
 			DealCount:             len(campaign.DealIDs),
 			PlacementCount:        len(campaign.AllowedPlacements),
 		})
@@ -125,8 +137,9 @@ func (e *Engine) Bid(ctx context.Context, req *openrtb.BidRequest, received time
 
 	best := candidate{}
 	for _, imp := range req.Imp {
-		for _, campaign := range e.cfg.Campaigns {
-			if !campaign.Enabled {
+		for i := range e.campaigns {
+			campaign := &e.campaigns[i]
+			if !campaign.cfg.Enabled {
 				continue
 			}
 			current, ok := e.evaluate(req, imp, campaign)
@@ -141,17 +154,17 @@ func (e *Engine) Bid(ctx context.Context, req *openrtb.BidRequest, received time
 	if !best.ok {
 		return Decision{NoBid: true, Reason: "no_eligible_campaign"}
 	}
-	if !e.reserve(best.campaign, best.price, received) {
+	if !e.reserve(best.campaign.cfg, best.price, received) {
 		return Decision{NoBid: true, Reason: "budget_or_qps_exhausted"}
 	}
 
-	bidID := stableID("bid", req.ID, best.imp.ID, best.campaign.ID, best.creative.ID)
+	bidID := stableID("bid", req.ID, best.imp.ID, best.campaign.cfg.ID, best.creative.ID)
 	bid := openrtb.Bid{
 		ID:      bidID,
 		ImpID:   best.imp.ID,
 		Price:   roundCPM(best.price),
 		AdID:    best.creative.ID,
-		CID:     best.campaign.ID,
+		CID:     best.campaign.cfg.ID,
 		CrID:    best.creative.ID,
 		Adomain: best.creative.Adomain,
 		DealID:  best.dealID,
@@ -164,7 +177,7 @@ func (e *Engine) Bid(ctx context.Context, req *openrtb.BidRequest, received time
 		Ext: map[string]any{
 			"clearledger": map[string]any{
 				"buyer_id":    e.cfg.BuyerID,
-				"campaign_id": best.campaign.ID,
+				"campaign_id": best.campaign.cfg.ID,
 				"creative_id": best.creative.ID,
 				"bidder":      "clearledger-bidder-openrtb",
 			},
@@ -174,7 +187,7 @@ func (e *Engine) Bid(ctx context.Context, req *openrtb.BidRequest, received time
 		ID:  req.ID,
 		Cur: e.cfg.Currency,
 		SeatBid: []openrtb.SeatBid{{
-			Seat: best.campaign.Seat,
+			Seat: best.campaign.cfg.Seat,
 			Bid:  []openrtb.Bid{bid},
 		}},
 		Ext: map[string]any{"clearledger": map[string]any{"no_clearing_in_bidder": true}},
@@ -183,36 +196,43 @@ func (e *Engine) Bid(ctx context.Context, req *openrtb.BidRequest, received time
 
 type candidate struct {
 	ok       bool
-	campaign config.Campaign
+	campaign *compiledCampaign
 	creative config.Creative
 	imp      openrtb.Impression
 	dealID   string
 	price    float64
 }
 
-func (e *Engine) evaluate(req *openrtb.BidRequest, imp openrtb.Impression, campaign config.Campaign) (candidate, bool) {
-	if !contains(campaign.MediaTypes, imp.MediaType()) {
+func (e *Engine) evaluate(req *openrtb.BidRequest, imp openrtb.Impression, campaign *compiledCampaign) (candidate, bool) {
+	if len(req.Cur) > 0 && !contains(req.Cur, e.cfg.Currency) {
+		return candidate{}, false
+	}
+	mediaType := imp.MediaType()
+	if !campaign.mediaTypes.has(mediaType) {
 		return candidate{}, false
 	}
 	if !allowedSupply(req, imp, campaign) || !allowedPrivacy(req, campaign) {
 		return candidate{}, false
 	}
-	dealID, dealFloor, ok := matchDeal(imp, campaign.DealIDs)
+	dealID, dealFloor, ok := matchDeal(imp, campaign.dealIDs, e.cfg.Currency)
 	if !ok {
 		return candidate{}, false
 	}
 	floor := math.Max(imp.BidFloor, dealFloor)
-	if campaign.BidCPM < floor {
+	if campaign.cfg.BidCPM < floor {
 		return candidate{}, false
 	}
 	if imp.BidFloorCur != "" && !strings.EqualFold(imp.BidFloorCur, e.cfg.Currency) {
 		return candidate{}, false
 	}
-	creative, ok := chooseCreative(imp.MediaType(), req, campaign.Creatives)
+	creative, ok := chooseCreative(mediaType, req, campaign.creativesByMedia[mediaType])
 	if !ok {
 		return candidate{}, false
 	}
-	return candidate{ok: true, campaign: campaign, creative: creative, imp: imp, dealID: dealID, price: campaign.BidCPM}, true
+	if blockedAdvertiser(req, creative) {
+		return candidate{}, false
+	}
+	return candidate{ok: true, campaign: campaign, creative: creative, imp: imp, dealID: dealID, price: campaign.cfg.BidCPM}, true
 }
 
 func (e *Engine) reserve(campaign config.Campaign, priceCPM float64, now time.Time) bool {
@@ -267,52 +287,52 @@ func pacingAllows(campaign config.Campaign, nextSpend float64, now time.Time) bo
 	return nextSpend <= allowed
 }
 
-func allowedSupply(req *openrtb.BidRequest, imp openrtb.Impression, c config.Campaign) bool {
-	if len(c.AllowedPlacements) > 0 && !contains(c.AllowedPlacements, imp.TagID) {
+func allowedSupply(req *openrtb.BidRequest, imp openrtb.Impression, c *compiledCampaign) bool {
+	if len(c.allowedPlacements) > 0 && !c.allowedPlacements.has(imp.TagID) {
 		return false
 	}
 	if req.App != nil {
-		if len(c.AllowedApps) > 0 && !contains(c.AllowedApps, req.App.ID) {
+		if len(c.allowedApps) > 0 && !c.allowedApps.has(req.App.ID) {
 			return false
 		}
-		if len(c.AllowedBundles) > 0 && !contains(c.AllowedBundles, req.App.Bundle) {
+		if len(c.allowedBundles) > 0 && !c.allowedBundles.has(req.App.Bundle) {
 			return false
 		}
 		return true
 	}
-	if req.Site != nil && len(c.AllowedDomains) > 0 {
-		return contains(c.AllowedDomains, req.Site.Domain)
+	if req.Site != nil && len(c.allowedDomains) > 0 {
+		return c.allowedDomains.has(req.Site.Domain)
 	}
 	return true
 }
 
-func allowedPrivacy(req *openrtb.BidRequest, c config.Campaign) bool {
+func allowedPrivacy(req *openrtb.BidRequest, c *compiledCampaign) bool {
 	coppa, _ := req.Regs["coppa"].(float64)
-	for _, cr := range c.Creatives {
+	for _, cr := range c.cfg.Creatives {
 		if cr.BlockedCOPPA && int(coppa) == 1 {
 			return false
 		}
 	}
 	if req.Device != nil && req.Device.LMT == 1 {
-		for _, cr := range c.Creatives {
+		for _, cr := range c.cfg.Creatives {
 			if cr.RequiresIFA {
 				return false
 			}
 		}
 	}
-	if len(c.GeoCountries) > 0 {
+	if len(c.geoCountries) > 0 {
 		country := ""
 		if req.Device != nil && req.Device.Geo != nil {
 			if raw, ok := req.Device.Geo["country"].(string); ok {
 				country = raw
 			}
 		}
-		return contains(c.GeoCountries, country)
+		return c.geoCountries.has(country)
 	}
 	return true
 }
 
-func matchDeal(imp openrtb.Impression, allowed []string) (string, float64, bool) {
+func matchDeal(imp openrtb.Impression, allowed stringSet, currency string) (string, float64, bool) {
 	if len(allowed) == 0 {
 		if imp.PMP != nil && imp.PMP.PrivateAuction == 1 {
 			return "", 0, false
@@ -323,7 +343,10 @@ func matchDeal(imp openrtb.Impression, allowed []string) (string, float64, bool)
 		return "", 0, false
 	}
 	for _, deal := range imp.PMP.Deals {
-		if contains(allowed, deal.ID) {
+		if allowed.has(deal.ID) {
+			if deal.BidFloorCur != "" && !strings.EqualFold(deal.BidFloorCur, currency) {
+				return "", 0, false
+			}
 			return deal.ID, deal.BidFloor, true
 		}
 	}
@@ -332,7 +355,7 @@ func matchDeal(imp openrtb.Impression, allowed []string) (string, float64, bool)
 
 func chooseCreative(mediaType string, req *openrtb.BidRequest, creatives []config.Creative) (config.Creative, bool) {
 	for _, creative := range creatives {
-		if !creative.Approved || !strings.EqualFold(creative.MediaType, mediaType) {
+		if !creative.Approved {
 			continue
 		}
 		if creative.RequiresIFA && (req.Device == nil || req.Device.IFA == "") {
@@ -341,6 +364,15 @@ func chooseCreative(mediaType string, req *openrtb.BidRequest, creatives []confi
 		return creative, true
 	}
 	return config.Creative{}, false
+}
+
+func blockedAdvertiser(req *openrtb.BidRequest, creative config.Creative) bool {
+	for _, domain := range creative.Adomain {
+		if contains(req.BAdv, domain) {
+			return true
+		}
+	}
+	return false
 }
 
 func renderMarkup(imp openrtb.Impression, cr config.Creative, impURL string) string {
@@ -405,6 +437,63 @@ func contains(values []string, needle string) bool {
 		}
 	}
 	return false
+}
+
+func compileCampaigns(campaigns []config.Campaign) []compiledCampaign {
+	out := make([]compiledCampaign, 0, len(campaigns))
+	for _, campaign := range campaigns {
+		compiled := compiledCampaign{
+			cfg:               campaign,
+			mediaTypes:        newStringSet(campaign.MediaTypes),
+			allowedApps:       newStringSet(campaign.AllowedApps),
+			allowedBundles:    newStringSet(campaign.AllowedBundles),
+			allowedDomains:    newStringSet(campaign.AllowedDomains),
+			allowedPlacements: newStringSet(campaign.AllowedPlacements),
+			dealIDs:           newStringSet(campaign.DealIDs),
+			geoCountries:      newStringSet(campaign.GeoCountries),
+			creativesByMedia:  map[string][]config.Creative{},
+		}
+		for _, creative := range campaign.Creatives {
+			if !creative.Approved {
+				continue
+			}
+			compiled.approvedCreatives++
+			mediaType := normalizeToken(creative.MediaType)
+			compiled.creativesByMedia[mediaType] = append(compiled.creativesByMedia[mediaType], creative)
+		}
+		out = append(out, compiled)
+	}
+	return out
+}
+
+func newStringSet(values []string) stringSet {
+	if len(values) == 0 {
+		return nil
+	}
+	out := make(stringSet, len(values))
+	for _, value := range values {
+		normalized := normalizeToken(value)
+		if normalized != "" {
+			out[normalized] = struct{}{}
+		}
+	}
+	return out
+}
+
+func (s stringSet) has(value string) bool {
+	if len(s) == 0 {
+		return false
+	}
+	_, ok := s[normalizeToken(value)]
+	return ok
+}
+
+func normalizeToken(value string) string {
+	value = strings.ToLower(strings.ReplaceAll(strings.TrimSpace(value), "-", "_"))
+	if value == "banner" {
+		return "display"
+	}
+	return value
 }
 
 func roundCPM(v float64) float64 { return math.Round(v*10000) / 10000 }
