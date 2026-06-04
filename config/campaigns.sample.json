@@ -10,11 +10,9 @@
       "bid_cpm": 9.25,
       "daily_budget": 100.0,
       "qps": 100,
-      "allowed_apps": ["app_123"],
       "allowed_bundles": ["com.example.app"],
       "allowed_placements": ["placement_123"],
       "deal_ids": ["deal_clearledger_123"],
-      "geo_countries": ["USA"],
       "media_types": ["video"],
       "creatives": [
         {

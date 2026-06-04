@@ -11,14 +11,17 @@ ClearLedger calls:
 ```http
 POST /openrtb
 Authorization: Bearer <token>
-X-ClearLedger-Timestamp: <unix_seconds>
-X-ClearLedger-Signature: sha256=<hmac_sha256(timestamp + "." + raw_body)>
+X-ClearLedger-Buyer-Timestamp: <rfc3339nano>
+X-ClearLedger-Auction-ID: <auction id>
+X-ClearLedger-Request-ID: <request id>
+X-ClearLedger-Buyer-Body-SHA256: <sha256 raw body>
+X-ClearLedger-Buyer-Signature: hmac-sha256=<hmac_sha256 signature>
 Content-Type: application/json
 ```
 
 `/buyers/{buyer}/openrtb` is also supported for deployments that route multiple approved buyer names through one host.
 
-The request must include:
+The production signature base is documented in `docs/clearledger-contract.md`. The request must include:
 
 - `id`, `tmax`, `cur`
 - exactly one of `site` or `app`
@@ -60,11 +63,13 @@ export BIDDER_OPENRTB_REQUIRE_SIGNATURE=true
 make run
 ```
 
-The signature payload is:
+For local helper tools, the bidder also accepts the simpler signature payload:
 
 ```text
 <X-ClearLedger-Timestamp>.<raw JSON request body>
 ```
+
+Production ClearLedger fanout uses the `X-ClearLedger-Buyer-*` header set, not the local helper header set.
 
 ## Docker
 
@@ -95,4 +100,27 @@ export BIDDER_PUBLIC_ENDPOINT='https://agency-bidder.example.com/openrtb'
 go run ./cmd/bidder -config config/campaigns.sample.json -register
 ```
 
+## Endpoint Certification
+
+Run the certification harness against a deployed endpoint before asking ClearLedger to approve it:
+
+```bash
+go run ./cmd/certify \
+  -endpoint https://agency-bidder.example.com/openrtb \
+  -token "$BIDDER_OPENRTB_AUTH_TOKEN" \
+  -signing-secret "$BIDDER_OPENRTB_SIGNING_SECRET"
+```
+
+The harness checks readiness, production ClearLedger signature headers, valid bid response shape, controlled no-bid, malformed request rejection, and OpenRTB bid-response validation.
+
 ClearLedger will still certify the endpoint, enforce the approved buyer lane, validate bid responses, select winners, return VAST/adm to supply, track delivery, and handle all billable/settlement/final receipt proof outside this bidder.
+
+## User Flow
+
+This does not require a bidder website. The agency/operator flow is CLI/API first:
+
+1. Configure local campaigns in JSON.
+2. Deploy the bidder on any HTTPS-capable server.
+3. Run `cmd/certify` against the public endpoint.
+4. Submit the approved-buyer registration payload to ClearLedger.
+5. ClearLedger publishes the approved buyer in the Redis runtime manifest and starts signed OpenRTB fanout.

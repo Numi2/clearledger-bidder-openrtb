@@ -117,6 +117,45 @@ func TestAuthAndSignature(t *testing.T) {
 	}
 }
 
+func TestProductionBuyerSignatureHeaders(t *testing.T) {
+	cfg := sampleConfig(t)
+	cfg.AuthToken = "token"
+	cfg.SigningSecret = "secret"
+	cfg.RequireAuth = true
+	cfg.RequireSignature = true
+	h := New(cfg, bidder.NewEngine(cfg))
+	body := sampleVideoRequest(t)
+	req := httptest.NewRequest(http.MethodPost, "/buyers/agency_bidder_1/openrtb", bytes.NewReader(body))
+	req.Header.Set("Authorization", "Bearer token")
+	applyProductionSignature(req, "secret", "auction_123", "auction_123", body)
+	rr := httptest.NewRecorder()
+	h.ServeHTTP(rr, req)
+	if rr.Code != http.StatusOK {
+		t.Fatalf("status=%d body=%s", rr.Code, rr.Body.String())
+	}
+}
+
+func TestProductionBuyerSignatureRejectsBodyHashMismatch(t *testing.T) {
+	cfg := sampleConfig(t)
+	cfg.AuthToken = "token"
+	cfg.SigningSecret = "secret"
+	cfg.RequireAuth = true
+	cfg.RequireSignature = true
+	h := New(cfg, bidder.NewEngine(cfg))
+	body := sampleVideoRequest(t)
+	req := httptest.NewRequest(http.MethodPost, "/openrtb", bytes.NewReader(body))
+	req.Header.Set("Authorization", "Bearer token")
+	applyProductionSignature(req, "secret", "auction_123", "auction_123", []byte(`{"different":true}`))
+	rr := httptest.NewRecorder()
+	h.ServeHTTP(rr, req)
+	if rr.Code != http.StatusUnauthorized {
+		t.Fatalf("status=%d body=%s", rr.Code, rr.Body.String())
+	}
+	if !strings.Contains(rr.Body.String(), "body_hash_mismatch") {
+		t.Fatalf("expected body hash mismatch, got %s", rr.Body.String())
+	}
+}
+
 func testHandler(t *testing.T) http.Handler {
 	t.Helper()
 	cfg := sampleConfig(t)
@@ -174,6 +213,23 @@ func sign(secret string, ts int64, body []byte) string {
 	mac.Write([]byte("."))
 	mac.Write(body)
 	return "sha256=" + hex.EncodeToString(mac.Sum(nil))
+}
+
+func applyProductionSignature(req *http.Request, secret, auctionID, requestID string, body []byte) {
+	timestamp := time.Now().UTC().Format(time.RFC3339Nano)
+	bodyHash := sha256Body(body)
+	mac := hmac.New(sha256.New, []byte(secret))
+	mac.Write([]byte(timestamp + "\n" + auctionID + "\n" + requestID + "\n" + bodyHash))
+	req.Header.Set("X-ClearLedger-Buyer-Timestamp", timestamp)
+	req.Header.Set("X-ClearLedger-Auction-ID", auctionID)
+	req.Header.Set("X-ClearLedger-Request-ID", requestID)
+	req.Header.Set("X-ClearLedger-Buyer-Body-SHA256", bodyHash)
+	req.Header.Set("X-ClearLedger-Buyer-Signature", "hmac-sha256="+hex.EncodeToString(mac.Sum(nil)))
+}
+
+func sha256Body(body []byte) string {
+	sum := sha256.Sum256(body)
+	return hex.EncodeToString(sum[:])
 }
 
 func strconvFormat(v int64) string {

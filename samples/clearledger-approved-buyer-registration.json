@@ -1,0 +1,21 @@
+{
+  "buyer_id": "agency_bidder_1",
+  "seat": "agency_seat_1",
+  "endpoint": "https://agency-bidder.example.com/openrtb",
+  "protocol": "openrtb-2.6-json",
+  "auth": {
+    "bearer": true,
+    "hmac_sha256": true,
+    "signature_headers": [
+      "X-ClearLedger-Buyer-Timestamp",
+      "X-ClearLedger-Auction-ID",
+      "X-ClearLedger-Request-ID",
+      "X-ClearLedger-Buyer-Body-SHA256",
+      "X-ClearLedger-Buyer-Signature"
+    ]
+  },
+  "supported_media": ["video", "display", "native"],
+  "no_bid": {
+    "http_status": 204
+  }
+}

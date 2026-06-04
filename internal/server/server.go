@@ -139,29 +139,84 @@ func (s *Server) authorize(r *http.Request, body []byte, now time.Time) error {
 		if s.cfg.SigningSecret == "" {
 			return errors.New("signature_not_configured")
 		}
-		timestamp := strings.TrimSpace(r.Header.Get("X-ClearLedger-Timestamp"))
-		signature := strings.TrimSpace(r.Header.Get("X-ClearLedger-Signature"))
-		if timestamp == "" || signature == "" {
-			return errors.New("missing_signature")
-		}
-		ts, err := strconv.ParseInt(timestamp, 10, 64)
-		if err != nil {
-			return errors.New("invalid_signature_timestamp")
-		}
-		age := now.Sub(time.Unix(ts, 0))
-		if age < -s.cfg.SignatureSkewDuration() || age > s.cfg.SignatureSkewDuration() {
-			return errors.New("stale_signature")
-		}
-		mac := hmac.New(sha256.New, []byte(s.cfg.SigningSecret))
-		mac.Write([]byte(timestamp))
-		mac.Write([]byte("."))
-		mac.Write(body)
-		want := "sha256=" + hex.EncodeToString(mac.Sum(nil))
-		if subtle.ConstantTimeCompare([]byte(signature), []byte(want)) != 1 {
-			return errors.New("bad_signature")
+		if productionSignatureHeadersPresent(r) {
+			if err := verifyProductionBuyerSignature(r, body, now, s.cfg.SigningSecret, s.cfg.SignatureSkewDuration()); err != nil {
+				return err
+			}
+		} else if err := verifyLocalSignature(r, body, now, s.cfg.SigningSecret, s.cfg.SignatureSkewDuration()); err != nil {
+			return err
 		}
 	}
 	return nil
+}
+
+func productionSignatureHeadersPresent(r *http.Request) bool {
+	return strings.TrimSpace(r.Header.Get("X-ClearLedger-Buyer-Timestamp")) != "" ||
+		strings.TrimSpace(r.Header.Get("X-ClearLedger-Buyer-Signature")) != "" ||
+		strings.TrimSpace(r.Header.Get("X-ClearLedger-Buyer-Body-SHA256")) != ""
+}
+
+func verifyProductionBuyerSignature(r *http.Request, body []byte, now time.Time, secret string, maxSkew time.Duration) error {
+	timestamp := strings.TrimSpace(r.Header.Get("X-ClearLedger-Buyer-Timestamp"))
+	auctionID := strings.TrimSpace(r.Header.Get("X-ClearLedger-Auction-ID"))
+	requestID := strings.TrimSpace(r.Header.Get("X-ClearLedger-Request-ID"))
+	providedBodyHash := strings.ToLower(strings.TrimSpace(r.Header.Get("X-ClearLedger-Buyer-Body-SHA256")))
+	providedSignature := strings.ToLower(strings.TrimSpace(r.Header.Get("X-ClearLedger-Buyer-Signature")))
+	if timestamp == "" || auctionID == "" || requestID == "" || providedBodyHash == "" || providedSignature == "" {
+		return errors.New("missing_signature_headers")
+	}
+	parsed, err := time.Parse(time.RFC3339Nano, timestamp)
+	if err != nil {
+		parsed, err = time.Parse(time.RFC3339, timestamp)
+	}
+	if err != nil {
+		return errors.New("invalid_signature_timestamp")
+	}
+	if age := now.Sub(parsed); age < -maxSkew || age > maxSkew {
+		return errors.New("stale_signature")
+	}
+	bodyHash := sha256Hex(body)
+	if subtle.ConstantTimeCompare([]byte(providedBodyHash), []byte(bodyHash)) != 1 {
+		return errors.New("body_hash_mismatch")
+	}
+	base := timestamp + "\n" + auctionID + "\n" + requestID + "\n" + bodyHash
+	mac := hmac.New(sha256.New, []byte(secret))
+	mac.Write([]byte(base))
+	want := "hmac-sha256=" + hex.EncodeToString(mac.Sum(nil))
+	if subtle.ConstantTimeCompare([]byte(providedSignature), []byte(want)) != 1 {
+		return errors.New("signature_mismatch")
+	}
+	return nil
+}
+
+func verifyLocalSignature(r *http.Request, body []byte, now time.Time, secret string, maxSkew time.Duration) error {
+	timestamp := strings.TrimSpace(r.Header.Get("X-ClearLedger-Timestamp"))
+	signature := strings.TrimSpace(r.Header.Get("X-ClearLedger-Signature"))
+	if timestamp == "" || signature == "" {
+		return errors.New("missing_signature")
+	}
+	ts, err := strconv.ParseInt(timestamp, 10, 64)
+	if err != nil {
+		return errors.New("invalid_signature_timestamp")
+	}
+	age := now.Sub(time.Unix(ts, 0))
+	if age < -maxSkew || age > maxSkew {
+		return errors.New("stale_signature")
+	}
+	mac := hmac.New(sha256.New, []byte(secret))
+	mac.Write([]byte(timestamp))
+	mac.Write([]byte("."))
+	mac.Write(body)
+	want := "sha256=" + hex.EncodeToString(mac.Sum(nil))
+	if subtle.ConstantTimeCompare([]byte(signature), []byte(want)) != 1 {
+		return errors.New("bad_signature")
+	}
+	return nil
+}
+
+func sha256Hex(body []byte) string {
+	sum := sha256.Sum256(body)
+	return hex.EncodeToString(sum[:])
 }
 
 func (s *Server) observe(label string) {
