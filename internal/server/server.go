@@ -20,17 +20,22 @@ import (
 	"github.com/Numi2/clearledger-bidder-openrtb/internal/openrtb"
 )
 
-const maxRequestBody = 256 << 10
+const defaultMaxRequestBody = 256 << 10
 
 type Server struct {
-	cfg    config.Config
-	engine *bidder.Engine
-	mu     sync.Mutex
-	counts map[string]uint64
+	cfg            config.Config
+	engine         *bidder.Engine
+	maxRequestBody int64
+	mu             sync.Mutex
+	counts         map[string]uint64
 }
 
 func New(cfg config.Config, engine *bidder.Engine) http.Handler {
-	s := &Server{cfg: cfg, engine: engine, counts: map[string]uint64{}}
+	maxBody := cfg.MaxRequestBodyBytes
+	if maxBody <= 0 {
+		maxBody = defaultMaxRequestBody
+	}
+	s := &Server{cfg: cfg, engine: engine, maxRequestBody: int64(maxBody), counts: map[string]uint64{}}
 	mux := http.NewServeMux()
 	mux.HandleFunc("/healthz", s.health)
 	mux.HandleFunc("/readyz", s.ready)
@@ -48,8 +53,8 @@ func (s *Server) openrtb(w http.ResponseWriter, r *http.Request) {
 		writeJSON(w, http.StatusMethodNotAllowed, map[string]any{"error": "method_not_allowed"})
 		return
 	}
-	body, err := io.ReadAll(io.LimitReader(r.Body, maxRequestBody+1))
-	if err != nil || len(body) > maxRequestBody {
+	body, err := io.ReadAll(io.LimitReader(r.Body, s.maxRequestBody+1))
+	if err != nil || int64(len(body)) > s.maxRequestBody {
 		s.observe("request_too_large")
 		writeJSON(w, http.StatusRequestEntityTooLarge, map[string]any{"error": "request_too_large"})
 		return
@@ -107,7 +112,9 @@ func (s *Server) ready(w http.ResponseWriter, r *http.Request) {
 			}
 		}
 	}
-	ok := enabled > 0
+	authReady := !s.cfg.RequireAuth || s.cfg.AuthToken != ""
+	signatureReady := !s.cfg.RequireSignature || s.cfg.SigningSecret != ""
+	ok := enabled > 0 && authReady && signatureReady
 	status := http.StatusOK
 	if !ok {
 		status = http.StatusServiceUnavailable
@@ -123,8 +130,10 @@ func (s *Server) ready(w http.ResponseWriter, r *http.Request) {
 		"auth": map[string]any{
 			"bearer_required":      s.cfg.RequireAuth,
 			"bearer_configured":    s.cfg.AuthToken != "",
+			"bearer_ready":         authReady,
 			"signature_required":   s.cfg.RequireSignature,
 			"signature_configured": s.cfg.SigningSecret != "",
+			"signature_ready":      signatureReady,
 		},
 	})
 }
@@ -160,8 +169,10 @@ func (s *Server) state(w http.ResponseWriter, r *http.Request) {
 			enabled++
 		}
 	}
+	authReady := !s.cfg.RequireAuth || s.cfg.AuthToken != ""
+	signatureReady := !s.cfg.RequireSignature || s.cfg.SigningSecret != ""
 	writeJSON(w, http.StatusOK, map[string]any{
-		"ok":                enabled > 0,
+		"ok":                enabled > 0 && authReady && signatureReady,
 		"service":           "clearledger-bidder-openrtb",
 		"buyer_id":          s.cfg.BuyerID,
 		"seat":              s.cfg.Seat,
@@ -171,8 +182,10 @@ func (s *Server) state(w http.ResponseWriter, r *http.Request) {
 		"auth": map[string]any{
 			"bearer_required":      s.cfg.RequireAuth,
 			"bearer_configured":    s.cfg.AuthToken != "",
+			"bearer_ready":         authReady,
 			"signature_required":   s.cfg.RequireSignature,
 			"signature_configured": s.cfg.SigningSecret != "",
+			"signature_ready":      signatureReady,
 		},
 	})
 }

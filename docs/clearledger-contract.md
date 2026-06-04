@@ -42,6 +42,8 @@ It also exposes operator endpoints for certification and debugging:
 - `/statez` for sanitized campaign runtime state.
 - `/events/{win|bill|loss|imp}` as a local notice sink.
 
+Readiness is intentionally strict: if bearer auth or request signatures are required but not configured, `/readyz` returns unavailable and certification should fail before ClearLedger sends live OpenRTB fanout.
+
 These endpoints help an agency operate the bidder, but they do not replace ClearLedger impression tracking, evidence archive, billing, settlement, publisher net, ClearLedger fee, payout, or final receipt systems.
 
 ## Certification Flow

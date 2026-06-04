@@ -9,7 +9,6 @@ import (
 	"os"
 	"os/signal"
 	"syscall"
-	"time"
 
 	"github.com/Numi2/clearledger-bidder-openrtb/internal/bidder"
 	"github.com/Numi2/clearledger-bidder-openrtb/internal/config"
@@ -41,11 +40,11 @@ func main() {
 	srv := &http.Server{
 		Addr:              ":" + cfg.Port,
 		Handler:           handler,
-		ReadHeaderTimeout: 500 * time.Millisecond,
-		ReadTimeout:       2 * time.Second,
-		WriteTimeout:      2 * time.Second,
-		IdleTimeout:       60 * time.Second,
-		MaxHeaderBytes:    16 << 10,
+		ReadHeaderTimeout: cfg.ReadHeaderTimeout(),
+		ReadTimeout:       cfg.ReadTimeout(),
+		WriteTimeout:      cfg.WriteTimeout(),
+		IdleTimeout:       cfg.IdleTimeout(),
+		MaxHeaderBytes:    cfg.MaxHeaderBytes,
 	}
 
 	go func() {
@@ -58,7 +57,7 @@ func main() {
 	stop := make(chan os.Signal, 1)
 	signal.Notify(stop, syscall.SIGINT, syscall.SIGTERM)
 	<-stop
-	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	ctx, cancel := context.WithTimeout(context.Background(), cfg.ShutdownTimeout())
 	defer cancel()
 	_ = srv.Shutdown(ctx)
 }

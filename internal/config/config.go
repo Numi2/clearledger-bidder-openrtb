@@ -20,6 +20,13 @@ type Config struct {
 	RequireAuth            bool       `json:"-"`
 	RequireSignature       bool       `json:"-"`
 	SignatureSkew          int        `json:"-"`
+	ReadHeaderTimeoutMS    int        `json:"-"`
+	ReadTimeoutMS          int        `json:"-"`
+	WriteTimeoutMS         int        `json:"-"`
+	IdleTimeoutMS          int        `json:"-"`
+	ShutdownTimeoutMS      int        `json:"-"`
+	MaxRequestBodyBytes    int        `json:"-"`
+	MaxHeaderBytes         int        `json:"-"`
 	ClearLedgerRegisterURL string     `json:"-"`
 	ClearLedgerAPIKey      string     `json:"-"`
 	Campaigns              []Campaign `json:"campaigns"`
@@ -81,6 +88,13 @@ func Load(path string) (Config, error) {
 	cfg.RequireAuth = boolEnv("BIDDER_OPENRTB_REQUIRE_AUTH", cfg.AuthToken != "")
 	cfg.RequireSignature = boolEnv("BIDDER_OPENRTB_REQUIRE_SIGNATURE", cfg.SigningSecret != "")
 	cfg.SignatureSkew = intEnv("BIDDER_OPENRTB_SIGNATURE_SKEW_SECONDS", 300)
+	cfg.ReadHeaderTimeoutMS = positiveIntEnv("BIDDER_HTTP_READ_HEADER_TIMEOUT_MS", 500)
+	cfg.ReadTimeoutMS = positiveIntEnv("BIDDER_HTTP_READ_TIMEOUT_MS", 2000)
+	cfg.WriteTimeoutMS = positiveIntEnv("BIDDER_HTTP_WRITE_TIMEOUT_MS", 2000)
+	cfg.IdleTimeoutMS = positiveIntEnv("BIDDER_HTTP_IDLE_TIMEOUT_MS", 60000)
+	cfg.ShutdownTimeoutMS = positiveIntEnv("BIDDER_HTTP_SHUTDOWN_TIMEOUT_MS", 5000)
+	cfg.MaxRequestBodyBytes = positiveIntEnv("BIDDER_MAX_REQUEST_BODY_BYTES", 256<<10)
+	cfg.MaxHeaderBytes = positiveIntEnv("BIDDER_MAX_HEADER_BYTES", 16<<10)
 	cfg.ClearLedgerRegisterURL = os.Getenv("CLEARLEDGER_REGISTER_URL")
 	cfg.ClearLedgerAPIKey = os.Getenv("CLEARLEDGER_API_KEY")
 	if cfg.Port == "" {
@@ -91,6 +105,9 @@ func Load(path string) (Config, error) {
 	}
 	if cfg.BuyerID == "" || cfg.Seat == "" || cfg.Currency == "" {
 		return cfg, fmt.Errorf("buyer_id, seat, and currency are required")
+	}
+	if cfg.SignatureSkew <= 0 {
+		return cfg, fmt.Errorf("BIDDER_OPENRTB_SIGNATURE_SKEW_SECONDS must be positive")
 	}
 	for i := range cfg.Campaigns {
 		if cfg.Campaigns[i].Seat == "" {
@@ -219,6 +236,34 @@ func intEnv(key string, fallback int) int {
 	return value
 }
 
+func positiveIntEnv(key string, fallback int) int {
+	value := intEnv(key, fallback)
+	if value <= 0 {
+		return fallback
+	}
+	return value
+}
+
 func (c Config) SignatureSkewDuration() time.Duration {
 	return time.Duration(c.SignatureSkew) * time.Second
+}
+
+func (c Config) ReadHeaderTimeout() time.Duration {
+	return time.Duration(c.ReadHeaderTimeoutMS) * time.Millisecond
+}
+
+func (c Config) ReadTimeout() time.Duration {
+	return time.Duration(c.ReadTimeoutMS) * time.Millisecond
+}
+
+func (c Config) WriteTimeout() time.Duration {
+	return time.Duration(c.WriteTimeoutMS) * time.Millisecond
+}
+
+func (c Config) IdleTimeout() time.Duration {
+	return time.Duration(c.IdleTimeoutMS) * time.Millisecond
+}
+
+func (c Config) ShutdownTimeout() time.Duration {
+	return time.Duration(c.ShutdownTimeoutMS) * time.Millisecond
 }

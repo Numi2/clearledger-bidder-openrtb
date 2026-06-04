@@ -211,6 +211,36 @@ func TestEventEndpointCountsNoticeCallbacks(t *testing.T) {
 	}
 }
 
+func TestReadyFailsWhenRequiredCredentialsMissing(t *testing.T) {
+	cfg := sampleConfig(t)
+	cfg.RequireAuth = true
+	cfg.AuthToken = ""
+	cfg.RequireSignature = true
+	cfg.SigningSecret = ""
+	h := New(cfg, bidder.NewEngine(cfg))
+	req := httptest.NewRequest(http.MethodGet, "/readyz", nil)
+	rr := httptest.NewRecorder()
+	h.ServeHTTP(rr, req)
+	if rr.Code != http.StatusServiceUnavailable {
+		t.Fatalf("status=%d body=%s", rr.Code, rr.Body.String())
+	}
+	for _, want := range []string{`"ok":false`, `"bearer_ready":false`, `"signature_ready":false`} {
+		if !strings.Contains(rr.Body.String(), want) {
+			t.Fatalf("readyz missing %s in %s", want, rr.Body.String())
+		}
+	}
+}
+
+func TestConfigurableRequestBodyLimit(t *testing.T) {
+	cfg := sampleConfig(t)
+	cfg.MaxRequestBodyBytes = 8
+	h := New(cfg, bidder.NewEngine(cfg))
+	rr := post(t, h, []byte(`{"id":"too-large"}`))
+	if rr.Code != http.StatusRequestEntityTooLarge {
+		t.Fatalf("status=%d body=%s", rr.Code, rr.Body.String())
+	}
+}
+
 func testHandler(t *testing.T) http.Handler {
 	t.Helper()
 	cfg := sampleConfig(t)

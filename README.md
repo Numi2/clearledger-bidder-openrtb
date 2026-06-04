@@ -101,6 +101,22 @@ The bidder exposes production-shaped service endpoints:
 - `GET /statez`: sanitized runtime state for campaign spend, pacing, QPS, media types, deal count, placement count, and approved creative count. It does not return auth tokens, signing secrets, creative markup, or ClearLedger settlement data.
 - `GET|POST /events/{win|bill|loss|imp}`: local notice callback sink for bidder-side observability. ClearLedger remains the billable impression and receipt authority.
 
+`/readyz` returns `503` when no campaign is enabled or when required auth/signature secrets are missing. That lets load balancers and ClearLedger certification catch an unsafe deployment before live bid fanout.
+
+## Runtime Tuning
+
+The HTTP server has conservative defaults for RTB traffic:
+
+- `BIDDER_HTTP_READ_HEADER_TIMEOUT_MS` default `500`
+- `BIDDER_HTTP_READ_TIMEOUT_MS` default `2000`
+- `BIDDER_HTTP_WRITE_TIMEOUT_MS` default `2000`
+- `BIDDER_HTTP_IDLE_TIMEOUT_MS` default `60000`
+- `BIDDER_HTTP_SHUTDOWN_TIMEOUT_MS` default `5000`
+- `BIDDER_MAX_REQUEST_BODY_BYTES` default `262144`
+- `BIDDER_MAX_HEADER_BYTES` default `16384`
+
+Keep `BIDDER_HTTP_WRITE_TIMEOUT_MS` above the largest ClearLedger buyer timeout plus network margin, but below the deployment platform timeout.
+
 ## ClearLedger Registration Mode
 
 Register the endpoint after deployment:
