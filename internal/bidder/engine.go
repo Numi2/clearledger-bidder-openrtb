@@ -145,7 +145,7 @@ func (e *Engine) Bid(ctx context.Context, req *openrtb.BidRequest, received time
 		return Decision{NoBid: true, Reason: "budget_or_qps_exhausted"}
 	}
 
-	bidID := stableID("bid", req.ID, best.imp.ID, best.campaign.ID, best.creative.ID, time.Now().UTC().Format(time.RFC3339Nano))
+	bidID := stableID("bid", req.ID, best.imp.ID, best.campaign.ID, best.creative.ID)
 	bid := openrtb.Bid{
 		ID:      bidID,
 		ImpID:   best.imp.ID,

@@ -47,6 +47,7 @@ No-bid is `204 No Content`. Malformed OpenRTB is `400`.
 ```bash
 make test
 make configcheck
+make bench
 make run
 curl -i http://localhost:8080/readyz
 curl -i -X POST http://localhost:8080/openrtb \
@@ -134,7 +135,7 @@ go run ./cmd/certify \
 
 ## ClearLedger Lane Harness
 
-For local end-to-end compatibility without private ClearLedger services, run the ClearLedger-side harness. It reads `samples/clearledger-runtime-manifest.local.json`, enforces the active lane and approved buyer route, signs OpenRTB fanout, validates the bid, selects the winner, builds the VAST/adm supply response, and emits proof steps showing that delivery tracking, billing, settlement, publisher net, ClearLedger fee, and final receipts stay outside the bidder.
+For local end-to-end compatibility without private ClearLedger services, run the ClearLedger-side harness. It reads `samples/clearledger-runtime-manifest.local.json`, enforces the active lane and approved buyer route, signs OpenRTB fanout, classifies each buyer as bid/no-bid/invalid/error, validates bid responses, selects the highest valid bid, builds the VAST/adm supply response, and emits proof steps showing that delivery tracking, billing, settlement, publisher net, ClearLedger fee, and final receipts stay outside the bidder.
 
 ```bash
 export BIDDER_OPENRTB_AUTH_TOKEN='token'
@@ -148,6 +149,10 @@ make harness
 ```
 
 ClearLedger will still certify the endpoint, enforce the approved buyer lane, validate bid responses, select winners, return VAST/adm to supply, track delivery, and handle all billable/settlement/final receipt proof outside this bidder.
+
+## Performance Posture
+
+The bidder keeps the OpenRTB hot path in-process: campaign config is loaded at startup, budget/QPS/pacing state is protected by a short mutex, and bid IDs are deterministic from auction ID, impression ID, campaign ID, and creative ID. Use `make bench` to run the hot-path benchmark before changing auction logic.
 
 ## User Flow
 

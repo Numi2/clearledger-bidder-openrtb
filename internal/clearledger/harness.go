@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"context"
 	"crypto/hmac"
+	"crypto/sha1"
 	"crypto/sha256"
 	"encoding/hex"
 	"encoding/json"
@@ -34,8 +35,10 @@ type Report struct {
 	CheckedAt       string          `json:"checked_at"`
 	LaneID          string          `json:"lane_id"`
 	PrivateMarketID string          `json:"private_market_id"`
+	BuyerResults    []BuyerResult   `json:"buyer_results,omitempty"`
 	Winner          *WinnerSummary  `json:"winner,omitempty"`
 	SupplyResponse  *SupplyResponse `json:"supply_response,omitempty"`
+	DeliveryProof   *DeliveryProof  `json:"delivery_proof,omitempty"`
 	ProofSteps      []ProofStep     `json:"proof_steps"`
 	Checks          []Check         `json:"checks"`
 }
@@ -63,12 +66,34 @@ type WinnerSummary struct {
 	DealID  string  `json:"dealid,omitempty"`
 }
 
+type BuyerResult struct {
+	BuyerID    string  `json:"buyer_id"`
+	SeatID     string  `json:"seat_id,omitempty"`
+	Endpoint   string  `json:"endpoint"`
+	Outcome    string  `json:"outcome"`
+	HTTPStatus int     `json:"http_status,omitempty"`
+	LatencyMS  float64 `json:"latency_ms,omitempty"`
+	Reason     string  `json:"reason,omitempty"`
+	BidID      string  `json:"bid_id,omitempty"`
+	Price      float64 `json:"price,omitempty"`
+	CrID       string  `json:"crid,omitempty"`
+}
+
 type SupplyResponse struct {
 	Type         string `json:"type"`
 	RequestID    string `json:"request_id"`
 	AdMarkup     string `json:"adm,omitempty"`
 	VAST         string `json:"vast,omitempty"`
 	ClearingNote string `json:"clearing_note"`
+}
+
+type DeliveryProof struct {
+	Owner                         string `json:"owner"`
+	ImpressionEventID             string `json:"impression_event_id"`
+	BillableEvent                 string `json:"billable_event"`
+	EvidenceArchive               string `json:"evidence_archive"`
+	BillingSettlementFinalReceipt string `json:"billing_settlement_final_receipt"`
+	BidderReceivesSettlementState bool   `json:"bidder_receives_settlement_state"`
 }
 
 type candidate struct {
@@ -130,20 +155,45 @@ func RunHarness(ctx context.Context, options HarnessOptions) (Report, error) {
 	client := &http.Client{Timeout: options.Timeout}
 	candidates := []candidate{}
 	for _, buyer := range buyers {
-		resp, status, err := callBuyer(ctx, client, buyer, options, lane, req, raw)
+		result := BuyerResult{
+			BuyerID:  buyer.BuyerID,
+			SeatID:   buyer.SeatID,
+			Endpoint: endpointForBuyer(buyer, options),
+		}
+		resp, status, latency, err := callBuyer(ctx, client, buyer, options, lane, req, raw)
+		result.HTTPStatus = status
+		result.LatencyMS = roundLatency(latency)
 		if err != nil {
+			result.Outcome = "error"
+			result.Reason = err.Error()
+			report.BuyerResults = append(report.BuyerResults, result)
 			add("buyer_call_"+buyer.BuyerID, false, err.Error())
 			continue
 		}
 		if status == http.StatusNoContent {
+			result.Outcome = "no_bid"
+			report.BuyerResults = append(report.BuyerResults, result)
 			add("buyer_call_"+buyer.BuyerID, true, "no_bid")
 			continue
 		}
 		if status < 200 || status >= 300 {
+			result.Outcome = "http_error"
+			result.Reason = fmt.Sprintf("status=%d", status)
+			report.BuyerResults = append(report.BuyerResults, result)
 			add("buyer_call_"+buyer.BuyerID, false, fmt.Sprintf("status=%d", status))
 			continue
 		}
 		bid, reason, ok := validCandidate(lane, buyer, req, resp)
+		if ok {
+			result.Outcome = "bid"
+			result.BidID = bid.ID
+			result.Price = bid.Price
+			result.CrID = bid.CrID
+		} else {
+			result.Outcome = "invalid_bid"
+			result.Reason = reason
+		}
+		report.BuyerResults = append(report.BuyerResults, result)
 		add("bid_response_valid_"+buyer.BuyerID, ok, reason)
 		if ok {
 			candidates = append(candidates, candidate{buyer: buyer, resp: resp, bid: bid})
@@ -154,7 +204,12 @@ func RunHarness(ctx context.Context, options HarnessOptions) (Report, error) {
 		add("winner_selected", false, "no_valid_bid")
 		return report, nil
 	}
-	sort.Slice(candidates, func(i, j int) bool { return candidates[i].bid.Price > candidates[j].bid.Price })
+	sort.Slice(candidates, func(i, j int) bool {
+		if candidates[i].bid.Price != candidates[j].bid.Price {
+			return candidates[i].bid.Price > candidates[j].bid.Price
+		}
+		return candidates[i].buyer.BuyerID < candidates[j].buyer.BuyerID
+	})
 	winner := candidates[0]
 	report.Winner = &WinnerSummary{
 		BuyerID: winner.buyer.BuyerID,
@@ -169,7 +224,8 @@ func RunHarness(ctx context.Context, options HarnessOptions) (Report, error) {
 	step("winner_selected", "clearledger", true, map[string]any{"buyer_id": winner.buyer.BuyerID, "price": winner.bid.Price})
 	report.SupplyResponse = buildSupplyResponse(req, winner.bid)
 	step("supply_response_built", "clearledger", true, map[string]any{"type": report.SupplyResponse.Type})
-	step("delivery_tracking_authority", "clearledger", true, map[string]any{"outside_bidder": true})
+	report.DeliveryProof = buildDeliveryProof(req, winner.buyer, winner.bid)
+	step("delivery_tracking_authority", "clearledger", true, map[string]any{"outside_bidder": true, "impression_event_id": report.DeliveryProof.ImpressionEventID})
 	step("billing_settlement_final_receipt", "clearledger", true, map[string]any{"outside_bidder": true, "bidder_receives_no_settlement_state": true})
 	return report, nil
 }
@@ -248,14 +304,11 @@ func enforceLaneRequest(lane Lane, req openrtb.BidRequest) string {
 	return ""
 }
 
-func callBuyer(ctx context.Context, client *http.Client, buyer ApprovedBuyer, options HarnessOptions, lane Lane, bidReq openrtb.BidRequest, raw []byte) (openrtb.BidResponse, int, error) {
-	endpoint := strings.TrimSpace(buyer.Endpoint)
-	if options.EndpointOverride != "" {
-		endpoint = options.EndpointOverride
-	}
+func callBuyer(ctx context.Context, client *http.Client, buyer ApprovedBuyer, options HarnessOptions, lane Lane, bidReq openrtb.BidRequest, raw []byte) (openrtb.BidResponse, int, time.Duration, error) {
+	endpoint := endpointForBuyer(buyer, options)
 	httpReq, err := http.NewRequestWithContext(ctx, http.MethodPost, endpoint, bytes.NewReader(raw))
 	if err != nil {
-		return openrtb.BidResponse{}, 0, err
+		return openrtb.BidResponse{}, 0, 0, err
 	}
 	httpReq.Header.Set("Content-Type", "application/json")
 	httpReq.Header.Set("Accept", "application/json")
@@ -265,22 +318,31 @@ func callBuyer(ctx context.Context, client *http.Client, buyer ApprovedBuyer, op
 	httpReq.Header.Set("X-ClearLedger-Buyer-ID", buyer.BuyerID)
 	httpReq.Header.Set("X-ClearLedger-Seat-ID", buyer.SeatID)
 	applyAuthHeaders(httpReq, buyer, options, bidReq.ID, bidReq.ID, raw)
+	start := time.Now()
 	resp, err := client.Do(httpReq)
+	latency := time.Since(start)
 	if err != nil {
-		return openrtb.BidResponse{}, 0, err
+		return openrtb.BidResponse{}, 0, latency, err
 	}
 	defer resp.Body.Close()
 	if resp.StatusCode == http.StatusNoContent {
-		return openrtb.BidResponse{}, resp.StatusCode, nil
+		return openrtb.BidResponse{}, resp.StatusCode, latency, nil
 	}
 	body, _ := io.ReadAll(io.LimitReader(resp.Body, 1<<20))
 	var bidResp openrtb.BidResponse
 	if resp.StatusCode >= 200 && resp.StatusCode < 300 {
 		if err := json.Unmarshal(body, &bidResp); err != nil {
-			return openrtb.BidResponse{}, resp.StatusCode, err
+			return openrtb.BidResponse{}, resp.StatusCode, latency, err
 		}
 	}
-	return bidResp, resp.StatusCode, nil
+	return bidResp, resp.StatusCode, latency, nil
+}
+
+func endpointForBuyer(buyer ApprovedBuyer, options HarnessOptions) string {
+	if options.EndpointOverride != "" {
+		return strings.TrimSpace(options.EndpointOverride)
+	}
+	return strings.TrimSpace(buyer.Endpoint)
 }
 
 func applyAuthHeaders(req *http.Request, buyer ApprovedBuyer, options HarnessOptions, auctionID, requestID string, body []byte) {
@@ -346,6 +408,17 @@ func buildSupplyResponse(req openrtb.BidRequest, bid openrtb.Bid) *SupplyRespons
 	return resp
 }
 
+func buildDeliveryProof(req openrtb.BidRequest, buyer ApprovedBuyer, bid openrtb.Bid) *DeliveryProof {
+	return &DeliveryProof{
+		Owner:                         "clearledger",
+		ImpressionEventID:             stableID("imp", req.ID, buyer.BuyerID, bid.ID, bid.ImpID),
+		BillableEvent:                 "impression",
+		EvidenceArchive:               "clearledger_redpanda_r2",
+		BillingSettlementFinalReceipt: "clearledger_proprietary",
+		BidderReceivesSettlementState: false,
+	}
+}
+
 func selectedBuyers(buyers []ApprovedBuyer, buyerID string) []ApprovedBuyer {
 	if buyerID == "" {
 		return buyers
@@ -404,4 +477,18 @@ func currency(value string) string {
 func sha256Hex(body []byte) string {
 	sum := sha256.Sum256(body)
 	return hex.EncodeToString(sum[:])
+}
+
+func stableID(prefix string, parts ...string) string {
+	h := sha1.New()
+	for _, part := range parts {
+		h.Write([]byte(part))
+		h.Write([]byte{0})
+	}
+	return prefix + "_" + hex.EncodeToString(h.Sum(nil))[:16]
+}
+
+func roundLatency(value time.Duration) float64 {
+	ms := float64(value.Microseconds()) / 1000
+	return float64(int(ms*100+0.5)) / 100
 }

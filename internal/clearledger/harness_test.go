@@ -3,9 +3,11 @@ package clearledger
 import (
 	"context"
 	"encoding/json"
+	"net/http"
 	"net/http/httptest"
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 
 	"github.com/Numi2/clearledger-bidder-openrtb/internal/bidder"
@@ -48,12 +50,78 @@ func TestRunHarnessProvesClearLedgerBoundary(t *testing.T) {
 	if report.SupplyResponse == nil || report.SupplyResponse.Type != "vast" || report.SupplyResponse.VAST == "" {
 		t.Fatalf("expected VAST supply response: %#v", report.SupplyResponse)
 	}
+	if report.DeliveryProof == nil || report.DeliveryProof.Owner != "clearledger" || report.DeliveryProof.BidderReceivesSettlementState {
+		t.Fatalf("expected ClearLedger-owned delivery proof: %#v", report.DeliveryProof)
+	}
 	if !hasProofStep(report, "billing_settlement_final_receipt", "clearledger") {
 		t.Fatalf("expected ClearLedger-owned settlement proof step: %#v", report.ProofSteps)
 	}
 }
 
+func TestRunHarnessClassifiesBuyerOutcomesAndSelectsHighestValidBid(t *testing.T) {
+	mux := http.NewServeMux()
+	mux.HandleFunc("/no-bid", func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(http.StatusNoContent)
+	})
+	mux.HandleFunc("/invalid", func(w http.ResponseWriter, r *http.Request) {
+		writeTestBidResponse(t, w, r, "buyer_invalid", "seat_invalid", 1.00, "deal_clearledger_123")
+	})
+	mux.HandleFunc("/low", func(w http.ResponseWriter, r *http.Request) {
+		writeTestBidResponse(t, w, r, "buyer_low", "seat_low", 9.25, "deal_clearledger_123")
+	})
+	mux.HandleFunc("/high", func(w http.ResponseWriter, r *http.Request) {
+		writeTestBidResponse(t, w, r, "buyer_high", "seat_high", 12.50, "deal_clearledger_123")
+	})
+	srv := httptest.NewServer(mux)
+	defer srv.Close()
+
+	manifestPath := writeManifestWithBuyers(t, []ApprovedBuyer{
+		testBuyer("buyer_no_bid", "seat_no_bid", srv.URL+"/no-bid"),
+		testBuyer("buyer_invalid", "seat_invalid", srv.URL+"/invalid"),
+		testBuyer("buyer_low", "seat_low", srv.URL+"/low"),
+		testBuyer("buyer_high", "seat_high", srv.URL+"/high"),
+	})
+	report, err := RunHarness(context.Background(), HarnessOptions{
+		ManifestPath:    manifestPath,
+		PrivateMarketID: "pm_cert",
+		SamplePath:      "../../samples/openrtb-video-request.json",
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if report.OK {
+		t.Fatalf("expected strict report to flag invalid selected buyer: %#v", report.Checks)
+	}
+	if report.Winner == nil || report.Winner.BuyerID != "buyer_high" || report.Winner.Price != 12.50 {
+		t.Fatalf("expected highest valid bidder to win: %#v", report.Winner)
+	}
+	assertOutcome(t, report, "buyer_no_bid", "no_bid")
+	assertOutcome(t, report, "buyer_invalid", "invalid_bid")
+	assertOutcome(t, report, "buyer_low", "bid")
+	assertOutcome(t, report, "buyer_high", "bid")
+	if report.SupplyResponse == nil || report.SupplyResponse.Type != "vast" || !strings.Contains(report.SupplyResponse.VAST, "MediaFile") {
+		t.Fatalf("expected VAST supply response: %#v", report.SupplyResponse)
+	}
+	if report.DeliveryProof == nil || report.DeliveryProof.Owner != "clearledger" || report.DeliveryProof.BillableEvent != "impression" {
+		t.Fatalf("expected ClearLedger delivery proof: %#v", report.DeliveryProof)
+	}
+}
+
 func writeManifest(t *testing.T, endpoint string) string {
+	t.Helper()
+	return writeManifestWithBuyers(t, []ApprovedBuyer{{
+		BuyerID:          "agency_bidder_1",
+		SeatID:           "agency_seat_1",
+		Status:           "approved",
+		Endpoint:         endpoint,
+		BidProtocol:      "openrtb_json",
+		AllowedFormats:   []string{"video"},
+		AuthTokenEnv:     "BIDDER_OPENRTB_AUTH_TOKEN",
+		SigningSecretEnv: "BIDDER_OPENRTB_SIGNING_SECRET",
+	}})
+}
+
+func writeManifestWithBuyers(t *testing.T, buyers []ApprovedBuyer) string {
 	t.Helper()
 	manifest := Manifest{
 		Version: "test",
@@ -72,16 +140,7 @@ func writeManifest(t *testing.T, endpoint string) string {
 			PlacementIDs:    []string{"placement_123"},
 			RequireAdomain:  true,
 			Metadata:        map[string]any{"package_id": "package_123", "deal_id": "deal_clearledger_123"},
-			ApprovedBuyers: []ApprovedBuyer{{
-				BuyerID:          "agency_bidder_1",
-				SeatID:           "agency_seat_1",
-				Status:           "approved",
-				Endpoint:         endpoint,
-				BidProtocol:      "openrtb_json",
-				AllowedFormats:   []string{"video"},
-				AuthTokenEnv:     "BIDDER_OPENRTB_AUTH_TOKEN",
-				SigningSecretEnv: "BIDDER_OPENRTB_SIGNING_SECRET",
-			}},
+			ApprovedBuyers:  buyers,
 		}},
 	}
 	body, _ := json.MarshalIndent(manifest, "", "  ")
@@ -90,6 +149,68 @@ func writeManifest(t *testing.T, endpoint string) string {
 		t.Fatal(err)
 	}
 	return path
+}
+
+func testBuyer(id, seat, endpoint string) ApprovedBuyer {
+	return ApprovedBuyer{
+		BuyerID:        id,
+		SeatID:         seat,
+		Status:         "approved",
+		Endpoint:       endpoint,
+		BidProtocol:    "openrtb_json",
+		AllowedFormats: []string{"video"},
+	}
+}
+
+func writeTestBidResponse(t *testing.T, w http.ResponseWriter, r *http.Request, buyerID, seat string, price float64, dealID string) {
+	t.Helper()
+	var req map[string]any
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		t.Fatal(err)
+	}
+	reqID, _ := req["id"].(string)
+	impID := "1"
+	if imps, ok := req["imp"].([]any); ok && len(imps) > 0 {
+		if imp, ok := imps[0].(map[string]any); ok {
+			if raw, ok := imp["id"].(string); ok && raw != "" {
+				impID = raw
+			}
+		}
+	}
+	w.Header().Set("Content-Type", "application/json")
+	resp := map[string]any{
+		"id":  reqID,
+		"cur": "USD",
+		"seatbid": []map[string]any{{
+			"seat": seat,
+			"bid": []map[string]any{{
+				"id":      "bid_" + buyerID,
+				"impid":   impID,
+				"price":   price,
+				"crid":    "creative_" + buyerID,
+				"adomain": []string{"advertiser.com"},
+				"dealid":  dealID,
+				"adm":     `<VAST version="4.3"><Ad><InLine><Impression><![CDATA[https://clearledger.example/imp]]></Impression><Creatives><Creative><Linear><MediaFiles><MediaFile delivery="progressive" type="video/mp4"><![CDATA[https://cdn.example.com/ad.mp4]]></MediaFile></MediaFiles></Linear></Creative></Creatives></InLine></Ad></VAST>`,
+				"nurl":    "https://clearledger.example/win",
+			}},
+		}},
+	}
+	if err := json.NewEncoder(w).Encode(resp); err != nil {
+		t.Fatal(err)
+	}
+}
+
+func assertOutcome(t *testing.T, report Report, buyerID, outcome string) {
+	t.Helper()
+	for _, result := range report.BuyerResults {
+		if result.BuyerID == buyerID {
+			if result.Outcome != outcome {
+				t.Fatalf("buyer %s outcome=%s want=%s result=%#v", buyerID, result.Outcome, outcome, result)
+			}
+			return
+		}
+	}
+	t.Fatalf("missing buyer result for %s: %#v", buyerID, report.BuyerResults)
 }
 
 func hasProofStep(report Report, name, owner string) bool {

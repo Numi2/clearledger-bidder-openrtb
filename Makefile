@@ -1,10 +1,13 @@
-.PHONY: test configcheck run certify harness docker
+.PHONY: test configcheck bench run certify harness docker
 
 test:
 	go test ./...
 
 configcheck:
 	go run ./cmd/configcheck -config config/campaigns.sample.json
+
+bench:
+	go test ./internal/bidder -bench BenchmarkEngineBidVideoPMP -benchmem
 
 run:
 	go run ./cmd/bidder -config config/campaigns.sample.json
