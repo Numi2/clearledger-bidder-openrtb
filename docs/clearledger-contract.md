@@ -27,6 +27,8 @@ Signature base:
 
 The bidder also accepts the simpler local helper headers `X-ClearLedger-Timestamp` and `X-ClearLedger-Signature`, but production ClearLedger fanout uses the buyer header set above.
 
+After signature verification, the bidder enforces header/body consistency. `X-ClearLedger-Request-ID` must match OpenRTB `id`, `X-ClearLedger-Auction-ID` must match `source.tid` when present or otherwise `id`, and `X-ClearLedger-Buyer-ID` / `X-ClearLedger-Seat-ID` must match the configured bidder identity when those headers are present. A mismatch is treated as a bad ClearLedger request and rejected before local campaign rules run.
+
 ## ClearLedger Responsibilities
 
 ClearLedger remains the transaction authority. It reads the Redis runtime manifest, enforces active lanes and approved buyers, signs requests, validates bid responses, selects winners, returns VAST/adm to supply, tracks delivery events, archives evidence, materializes billing/settlement rows, computes publisher net and ClearLedger fee, and produces final receipts.

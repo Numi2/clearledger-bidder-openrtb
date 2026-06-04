@@ -77,6 +77,8 @@ For local helper tools, the bidder also accepts the simpler signature payload:
 
 Production ClearLedger fanout uses the `X-ClearLedger-Buyer-*` header set, not the local helper header set.
 
+When ClearLedger request headers are present, the bidder checks that `X-ClearLedger-Request-ID` matches OpenRTB `id`, `X-ClearLedger-Auction-ID` matches `source.tid` or `id`, and buyer/seat headers match the configured `buyer_id` and `seat`. Mismatches are rejected before campaign evaluation.
+
 ## Docker
 
 ```bash

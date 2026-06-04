@@ -159,6 +159,85 @@ func TestProductionBuyerSignatureHeaders(t *testing.T) {
 	}
 }
 
+func TestClearLedgerRequestHeadersMustMatchBodyAndBuyer(t *testing.T) {
+	for _, tc := range []struct {
+		name          string
+		auctionID     string
+		requestID     string
+		buyerID       string
+		seatID        string
+		wantError     string
+		signAuctionID string
+		signRequestID string
+	}{
+		{
+			name:          "request id mismatch",
+			auctionID:     "auction_123",
+			requestID:     "wrong_request",
+			buyerID:       "agency_bidder_1",
+			seatID:        "agency_seat_1",
+			wantError:     "request_id_mismatch",
+			signAuctionID: "auction_123",
+			signRequestID: "wrong_request",
+		},
+		{
+			name:          "auction id mismatch",
+			auctionID:     "wrong_auction",
+			requestID:     "auction_123",
+			buyerID:       "agency_bidder_1",
+			seatID:        "agency_seat_1",
+			wantError:     "auction_id_mismatch",
+			signAuctionID: "wrong_auction",
+			signRequestID: "auction_123",
+		},
+		{
+			name:          "buyer id mismatch",
+			auctionID:     "auction_123",
+			requestID:     "auction_123",
+			buyerID:       "wrong_buyer",
+			seatID:        "agency_seat_1",
+			wantError:     "buyer_id_mismatch",
+			signAuctionID: "auction_123",
+			signRequestID: "auction_123",
+		},
+		{
+			name:          "seat id mismatch",
+			auctionID:     "auction_123",
+			requestID:     "auction_123",
+			buyerID:       "agency_bidder_1",
+			seatID:        "wrong_seat",
+			wantError:     "seat_id_mismatch",
+			signAuctionID: "auction_123",
+			signRequestID: "auction_123",
+		},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			cfg := sampleConfig(t)
+			cfg.AuthToken = "token"
+			cfg.SigningSecret = "secret"
+			cfg.RequireAuth = true
+			cfg.RequireSignature = true
+			h := New(cfg, bidder.NewEngine(cfg))
+			body := sampleVideoRequest(t)
+			req := httptest.NewRequest(http.MethodPost, "/openrtb", bytes.NewReader(body))
+			req.Header.Set("Authorization", "Bearer token")
+			applyProductionSignature(req, "secret", tc.signAuctionID, tc.signRequestID, body)
+			req.Header.Set("X-ClearLedger-Auction-ID", tc.auctionID)
+			req.Header.Set("X-ClearLedger-Request-ID", tc.requestID)
+			req.Header.Set("X-ClearLedger-Buyer-ID", tc.buyerID)
+			req.Header.Set("X-ClearLedger-Seat-ID", tc.seatID)
+			rr := httptest.NewRecorder()
+			h.ServeHTTP(rr, req)
+			if rr.Code != http.StatusBadRequest {
+				t.Fatalf("status=%d body=%s", rr.Code, rr.Body.String())
+			}
+			if !strings.Contains(rr.Body.String(), tc.wantError) {
+				t.Fatalf("expected %s, got %s", tc.wantError, rr.Body.String())
+			}
+		})
+	}
+}
+
 func TestProductionBuyerSignatureRejectsBodyHashMismatch(t *testing.T) {
 	cfg := sampleConfig(t)
 	cfg.AuthToken = "token"

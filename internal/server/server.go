@@ -70,6 +70,11 @@ func (s *Server) openrtb(w http.ResponseWriter, r *http.Request) {
 		writeJSON(w, http.StatusBadRequest, map[string]any{"error": "malformed_openrtb", "detail": err.Error()})
 		return
 	}
+	if err := s.validateClearLedgerRequestHeaders(r, req); err != nil {
+		s.observe("clearledger_header_mismatch")
+		writeJSON(w, http.StatusBadRequest, map[string]any{"error": err.Error()})
+		return
+	}
 	decision := s.engine.Bid(r.Context(), req, start)
 	if decision.NoBid || decision.Response == nil {
 		s.observe("nobid_" + metricLabel(decision.Reason))
@@ -220,6 +225,34 @@ func (s *Server) authorize(r *http.Request, body []byte, now time.Time) error {
 		}
 	}
 	return nil
+}
+
+func (s *Server) validateClearLedgerRequestHeaders(r *http.Request, req *openrtb.BidRequest) error {
+	if req == nil {
+		return errors.New("malformed_openrtb")
+	}
+	if requestID := strings.TrimSpace(r.Header.Get("X-ClearLedger-Request-ID")); requestID != "" && requestID != req.ID {
+		return errors.New("request_id_mismatch")
+	}
+	if auctionID := strings.TrimSpace(r.Header.Get("X-ClearLedger-Auction-ID")); auctionID != "" && auctionID != auctionIDFromRequest(req) {
+		return errors.New("auction_id_mismatch")
+	}
+	if buyerID := strings.TrimSpace(r.Header.Get("X-ClearLedger-Buyer-ID")); buyerID != "" && s.cfg.BuyerID != "" && buyerID != s.cfg.BuyerID {
+		return errors.New("buyer_id_mismatch")
+	}
+	if seatID := strings.TrimSpace(r.Header.Get("X-ClearLedger-Seat-ID")); seatID != "" && s.cfg.Seat != "" && seatID != s.cfg.Seat {
+		return errors.New("seat_id_mismatch")
+	}
+	return nil
+}
+
+func auctionIDFromRequest(req *openrtb.BidRequest) string {
+	if req.Source != nil {
+		if tid, ok := req.Source["tid"].(string); ok && strings.TrimSpace(tid) != "" {
+			return strings.TrimSpace(tid)
+		}
+	}
+	return req.ID
 }
 
 func productionSignatureHeadersPresent(r *http.Request) bool {
