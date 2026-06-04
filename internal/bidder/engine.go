@@ -446,7 +446,11 @@ func renderMarkup(imp openrtb.Impression, cr config.Creative, impURL string) str
 		mime := assetMime(cr, imp.MediaType())
 		return fmt.Sprintf(`<VAST version="4.3"><Ad id="%s"><InLine><AdSystem>ClearLedger Bidder OpenRTB</AdSystem><AdTitle>%s</AdTitle><Impression><![CDATA[%s]]></Impression><Creatives><Creative id="%s"><Linear><Duration>%s</Duration><MediaFiles><MediaFile delivery="progressive" type="%s" width="%d" height="%d"><![CDATA[%s]]></MediaFile></MediaFiles><VideoClicks><ClickThrough><![CDATA[%s]]></ClickThrough></VideoClicks></Linear></Creative></Creatives></InLine></Ad></VAST>`, cr.ID, cr.ID, impURL, cr.ID, vastDuration(duration), mime, max(cr.W, 640), max(cr.H, 360), cr.AssetURL, cr.LandingURL)
 	case "native":
-		body, _ := json.Marshal(map[string]any{"native": map[string]any{"link": map[string]any{"url": cr.LandingURL}, "assets": []map[string]any{{"id": 1, "title": map[string]any{"text": cr.ID}}}, "imptrackers": []string{impURL}}})
+		assets := make([]map[string]any, 0, 1)
+		for _, id := range openrtb.NativeResponseAssetIDs(imp) {
+			assets = append(assets, map[string]any{"id": id, "title": map[string]any{"text": cr.ID}})
+		}
+		body, _ := json.Marshal(map[string]any{"native": map[string]any{"link": map[string]any{"url": cr.LandingURL}, "assets": assets, "imptrackers": []string{impURL}}})
 		return string(body)
 	default:
 		w, h := max(cr.W, 300), max(cr.H, 250)

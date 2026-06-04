@@ -85,7 +85,7 @@ Bid responses include:
 
 When `imp.ext.clearledger.receipt_required` is true, the validator requires `bid.ext.clearledger` to include buyer, campaign, and creative IDs and to echo any ClearLedger lane/package/placement/proof fields from the request.
 
-For video and audio, `bid.adm` must be parseable VAST with an impression, duration, and media file. When the request declares media constraints, the validator checks VAST duration against `minduration`/`maxduration`, checks `MediaFile type` against requested `mimes`, and checks video media dimensions when both the request and VAST provide dimensions. For native, `bid.adm` must be OpenRTB Native response JSON with a landing link and must include every asset ID marked required in `imp.native.request`.
+For video and audio, `bid.adm` must be parseable VAST with an impression, duration, and media file. When the request declares media constraints, the validator checks VAST duration against `minduration`/`maxduration`, checks `MediaFile type` against requested `mimes`, and checks video media dimensions when both the request and VAST provide dimensions. For native, `bid.adm` must be OpenRTB Native response JSON with a landing link and must include every asset ID marked required in `imp.native.request`; the built-in native renderer uses those required asset IDs when it builds the response.
 
 No-bid is `204 No Content`. Malformed OpenRTB is `400`.
 

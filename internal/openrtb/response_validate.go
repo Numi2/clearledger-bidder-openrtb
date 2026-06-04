@@ -266,6 +266,26 @@ func validateNativeMarkup(imp Impression, adm string) error {
 	return nil
 }
 
+func NativeResponseAssetIDs(imp Impression) []int {
+	if imp.Native == nil {
+		return []int{1}
+	}
+	reqInfo, err := parseNativeRequest(imp.Native.Request)
+	if err != nil || len(reqInfo.assets) == 0 {
+		return []int{1}
+	}
+	ids := make([]int, 0, len(reqInfo.requiredIDs))
+	for _, id := range reqInfo.assets {
+		if _, ok := reqInfo.requiredIDs[id]; ok {
+			ids = append(ids, id)
+		}
+	}
+	if len(ids) == 0 {
+		ids = append(ids, reqInfo.assets[0])
+	}
+	return ids
+}
+
 func validateBidMediaConstraints(imp Impression, bid Bid) error {
 	switch imp.MediaType() {
 	case "display":

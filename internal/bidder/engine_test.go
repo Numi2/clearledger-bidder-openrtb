@@ -2,6 +2,7 @@ package bidder
 
 import (
 	"context"
+	"encoding/json"
 	"os"
 	"strings"
 	"testing"
@@ -185,6 +186,44 @@ func TestVASTDurationFormatsOverOneMinute(t *testing.T) {
 	adm := decision.Response.SeatBid[0].Bid[0].AdM
 	if !strings.Contains(adm, "<Duration>00:02:05</Duration>") {
 		t.Fatalf("expected HH:MM:SS VAST duration, got %s", adm)
+	}
+}
+
+func TestNativeBidUsesRequiredAssetIDs(t *testing.T) {
+	cfg, _ := sampleConfigAndRequest(t)
+	req := &openrtb.BidRequest{
+		ID:   "native_auction",
+		TMax: 100,
+		Cur:  []string{"USD"},
+		Site: &openrtb.Site{Domain: "example.com"},
+		Imp: []openrtb.Impression{{
+			ID:          "1",
+			TagID:       "native_1",
+			BidFloor:    1,
+			BidFloorCur: "USD",
+			Native:      &openrtb.Native{Request: `{"native":{"ver":"1.2","assets":[{"id":2},{"id":7,"required":1,"title":{"len":80}}]}}`},
+		}},
+	}
+	decision := NewEngine(cfg).Bid(context.Background(), req, time.Now().UTC())
+	if decision.NoBid || decision.Response == nil {
+		t.Fatalf("expected native bid, got %#v", decision)
+	}
+	bid := decision.Response.SeatBid[0].Bid[0]
+	if err := openrtb.ValidateBidResponse(req, decision.Response); err != nil {
+		t.Fatalf("generated native bid should validate: %v", err)
+	}
+	var adm struct {
+		Native struct {
+			Assets []struct {
+				ID int `json:"id"`
+			} `json:"assets"`
+		} `json:"native"`
+	}
+	if err := json.Unmarshal([]byte(bid.AdM), &adm); err != nil {
+		t.Fatal(err)
+	}
+	if len(adm.Native.Assets) != 1 || adm.Native.Assets[0].ID != 7 {
+		t.Fatalf("native adm assets=%#v", adm.Native.Assets)
 	}
 }
 

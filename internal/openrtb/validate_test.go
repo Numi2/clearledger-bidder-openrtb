@@ -528,6 +528,20 @@ func TestValidateBidResponseRequiresNativeRequiredAssets(t *testing.T) {
 	}
 }
 
+func TestNativeResponseAssetIDsUsesRequiredAssets(t *testing.T) {
+	imp := Impression{Native: &Native{Request: `{"native":{"assets":[{"id":2},{"id":7,"required":1},{"id":9,"required":1}]}}`}}
+	got := NativeResponseAssetIDs(imp)
+	if len(got) != 2 || got[0] != 7 || got[1] != 9 {
+		t.Fatalf("required asset ids=%v", got)
+	}
+
+	imp.Native.Request = `{"native":{"assets":[{"id":4},{"id":5}]}}`
+	got = NativeResponseAssetIDs(imp)
+	if len(got) != 1 || got[0] != 4 {
+		t.Fatalf("fallback asset ids=%v", got)
+	}
+}
+
 func TestLooksLikeNativeAdM(t *testing.T) {
 	valid := `{"native":{"assets":[{"id":1,"title":{"text":"creative"}}],"link":{"url":"https://advertiser.com"},"imptrackers":["https://tracker.example/imp"]}}`
 	if !LooksLikeNativeAdM(valid) {
