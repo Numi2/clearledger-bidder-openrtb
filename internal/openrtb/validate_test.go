@@ -53,6 +53,28 @@ func TestValidateBidResponse(t *testing.T) {
 	}
 }
 
+func TestSampleBidResponseValidatesAgainstSampleRequest(t *testing.T) {
+	reqBody, err := os.ReadFile("../../samples/openrtb-video-request.json")
+	if err != nil {
+		t.Fatal(err)
+	}
+	req, err := DecodeRequest(reqBody)
+	if err != nil {
+		t.Fatal(err)
+	}
+	respBody, err := os.ReadFile("../../samples/openrtb-bid-response.json")
+	if err != nil {
+		t.Fatal(err)
+	}
+	var resp BidResponse
+	if err := json.Unmarshal(respBody, &resp); err != nil {
+		t.Fatal(err)
+	}
+	if err := ValidateBidResponse(req, &resp); err != nil {
+		t.Fatal(err)
+	}
+}
+
 func TestDecodeRequestAllowsExtensions(t *testing.T) {
 	body := []byte(`{"id":"a","site":{"domain":"example.com","publisher":{"id":"pub"}},"imp":[{"id":"1","banner":{"w":1,"h":1},"ext":{"clearledger":{"lane_id":"lane"}}}],"ext":{"x":1}}`)
 	var raw map[string]any
