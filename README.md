@@ -37,7 +37,7 @@ Bid responses include:
 - `seatbid[].seat`
 - `bid.id`, `bid.impid`, `bid.price`, `bid.crid`, `bid.adomain`
 - non-empty `seatbid[].bid`, unique `bid.id`, and at most one bid per impression in a single response
-- `bid.dealid` for PMP inventory
+- `bid.dealid` matching the bid's own impression Deal ID for PMP inventory
 - `bid.adm` containing VAST for video/audio, display markup for banner, or OpenRTB native response JSON for native
 - `nurl`, `burl`, `lurl` notice URLs
 - `bid.ext.clearledger` with buyer/campaign/creative identifiers plus echoed ClearLedger lane/package/placement/proof fields when present in `imp.ext.clearledger`

@@ -20,14 +20,17 @@ func ValidateBidResponse(req *BidRequest, resp *BidResponse) error {
 		return fmt.Errorf("response currency not allowed by request")
 	}
 	impIDs := map[string]Impression{}
-	dealIDs := map[string]struct{}{}
+	dealIDsByImp := map[string]map[string]struct{}{}
 	floors := map[string]float64{}
 	for _, imp := range req.Imp {
 		impIDs[imp.ID] = imp
 		floors[imp.ID] = imp.BidFloor
 		if imp.PMP != nil {
 			for _, deal := range imp.PMP.Deals {
-				dealIDs[deal.ID] = struct{}{}
+				if dealIDsByImp[imp.ID] == nil {
+					dealIDsByImp[imp.ID] = map[string]struct{}{}
+				}
+				dealIDsByImp[imp.ID][deal.ID] = struct{}{}
 				if deal.BidFloor > floors[imp.ID] {
 					floors[imp.ID] = deal.BidFloor
 				}
@@ -82,12 +85,12 @@ func ValidateBidResponse(req *BidRequest, resp *BidResponse) error {
 			if err := validateClearLedgerProofExt(impIDs[bid.ImpID], bid); err != nil {
 				return err
 			}
-			if len(dealIDs) > 0 {
+			if dealIDs := dealIDsByImp[bid.ImpID]; len(dealIDs) > 0 {
 				if bid.DealID == "" {
 					return fmt.Errorf("dealid is required for PMP requests")
 				}
 				if _, ok := dealIDs[bid.DealID]; !ok {
-					return fmt.Errorf("bid dealid does not match request")
+					return fmt.Errorf("bid dealid does not match request impression")
 				}
 			}
 		}

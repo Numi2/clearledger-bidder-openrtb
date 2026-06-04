@@ -178,6 +178,96 @@ func TestValidateBidResponseRejectsEmptyAndDuplicateBids(t *testing.T) {
 	}
 }
 
+func TestValidateBidResponseValidatesPMPDealPerImpression(t *testing.T) {
+	req := &BidRequest{
+		ID:   "auction",
+		Cur:  []string{"USD"},
+		Site: &Site{Domain: "example.com"},
+		Imp: []Impression{
+			{
+				ID:          "1",
+				BidFloor:    1,
+				BidFloorCur: "USD",
+				Banner:      &Banner{W: 300, H: 250},
+				PMP:         &PMP{PrivateAuction: 1, Deals: []Deal{{ID: "deal_1", BidFloor: 1, BidFloorCur: "USD"}}},
+			},
+			{
+				ID:          "2",
+				BidFloor:    1,
+				BidFloorCur: "USD",
+				Banner:      &Banner{W: 300, H: 250},
+				PMP:         &PMP{PrivateAuction: 1, Deals: []Deal{{ID: "deal_2", BidFloor: 1, BidFloorCur: "USD"}}},
+			},
+		},
+	}
+	resp := &BidResponse{
+		ID:  "auction",
+		Cur: "USD",
+		SeatBid: []SeatBid{{
+			Seat: "seat",
+			Bid: []Bid{{
+				ID:      "bid_1",
+				ImpID:   "1",
+				Price:   1,
+				CrID:    "creative",
+				Adomain: []string{"advertiser.com"},
+				DealID:  "deal_2",
+				AdM:     `<img src="https://cdn.example/ad.png">`,
+				NURL:    "https://bidder.example/win",
+			}},
+		}},
+	}
+	if err := ValidateBidResponse(req, resp); err == nil {
+		t.Fatal("expected wrong impression deal id to fail")
+	}
+	resp.SeatBid[0].Bid[0].DealID = "deal_1"
+	if err := ValidateBidResponse(req, resp); err != nil {
+		t.Fatal(err)
+	}
+}
+
+func TestValidateBidResponseDoesNotRequireDealForNonPMPImpression(t *testing.T) {
+	req := &BidRequest{
+		ID:   "auction",
+		Cur:  []string{"USD"},
+		Site: &Site{Domain: "example.com"},
+		Imp: []Impression{
+			{
+				ID:          "1",
+				BidFloor:    1,
+				BidFloorCur: "USD",
+				Banner:      &Banner{W: 300, H: 250},
+				PMP:         &PMP{PrivateAuction: 1, Deals: []Deal{{ID: "deal_1", BidFloor: 1, BidFloorCur: "USD"}}},
+			},
+			{
+				ID:          "2",
+				BidFloor:    1,
+				BidFloorCur: "USD",
+				Banner:      &Banner{W: 300, H: 250},
+			},
+		},
+	}
+	resp := &BidResponse{
+		ID:  "auction",
+		Cur: "USD",
+		SeatBid: []SeatBid{{
+			Seat: "seat",
+			Bid: []Bid{{
+				ID:      "bid_2",
+				ImpID:   "2",
+				Price:   1,
+				CrID:    "creative",
+				Adomain: []string{"advertiser.com"},
+				AdM:     `<img src="https://cdn.example/ad.png">`,
+				NURL:    "https://bidder.example/win",
+			}},
+		}},
+	}
+	if err := ValidateBidResponse(req, resp); err != nil {
+		t.Fatal(err)
+	}
+}
+
 func TestValidateBidResponseRequiresClearLedgerProofFieldsWhenReceiptRequired(t *testing.T) {
 	req := &BidRequest{
 		ID:   "auction",
