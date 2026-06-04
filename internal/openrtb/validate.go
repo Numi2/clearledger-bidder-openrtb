@@ -37,6 +37,9 @@ func ValidateRequest(req *BidRequest) error {
 	if len(req.Imp) == 0 {
 		return fmt.Errorf("%w: at least one imp is required", ErrMalformed)
 	}
+	if req.TMax < 0 {
+		return fmt.Errorf("%w: tmax must be non-negative", ErrMalformed)
+	}
 	if (req.App == nil && req.Site == nil) || (req.App != nil && req.Site != nil) {
 		return fmt.Errorf("%w: exactly one of app or site is required", ErrMalformed)
 	}
@@ -65,6 +68,9 @@ func ValidateRequest(req *BidRequest) error {
 		if mediaObjects != 1 {
 			return fmt.Errorf("%w: imp[%d] must include exactly one media object", ErrMalformed, idx)
 		}
+		if err := validateMediaObject(idx, imp); err != nil {
+			return err
+		}
 		if imp.BidFloor < 0 {
 			return fmt.Errorf("%w: imp[%d].bidfloor must be non-negative", ErrMalformed, idx)
 		}
@@ -77,6 +83,34 @@ func ValidateRequest(req *BidRequest) error {
 					return fmt.Errorf("%w: imp[%d].pmp.deals[%d].bidfloor must be non-negative", ErrMalformed, idx, dealIdx)
 				}
 			}
+		}
+	}
+	return nil
+}
+
+func validateMediaObject(idx int, imp Impression) error {
+	if imp.Banner != nil {
+		if imp.Banner.W < 0 || imp.Banner.H < 0 {
+			return fmt.Errorf("%w: imp[%d].banner dimensions must be non-negative", ErrMalformed, idx)
+		}
+	}
+	if imp.Video != nil {
+		if imp.Video.MinDuration < 0 || imp.Video.MaxDuration < 0 {
+			return fmt.Errorf("%w: imp[%d].video duration bounds must be non-negative", ErrMalformed, idx)
+		}
+		if imp.Video.MinDuration > 0 && imp.Video.MaxDuration > 0 && imp.Video.MinDuration > imp.Video.MaxDuration {
+			return fmt.Errorf("%w: imp[%d].video minduration cannot exceed maxduration", ErrMalformed, idx)
+		}
+		if imp.Video.W < 0 || imp.Video.H < 0 {
+			return fmt.Errorf("%w: imp[%d].video dimensions must be non-negative", ErrMalformed, idx)
+		}
+	}
+	if imp.Audio != nil {
+		if imp.Audio.MinDuration < 0 || imp.Audio.MaxDuration < 0 {
+			return fmt.Errorf("%w: imp[%d].audio duration bounds must be non-negative", ErrMalformed, idx)
+		}
+		if imp.Audio.MinDuration > 0 && imp.Audio.MaxDuration > 0 && imp.Audio.MinDuration > imp.Audio.MaxDuration {
+			return fmt.Errorf("%w: imp[%d].audio minduration cannot exceed maxduration", ErrMalformed, idx)
 		}
 	}
 	return nil

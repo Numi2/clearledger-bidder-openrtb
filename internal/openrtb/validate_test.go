@@ -71,6 +71,44 @@ func TestDecodeRequestRejectsTrailingJSON(t *testing.T) {
 	}
 }
 
+func TestDecodeRequestRejectsInvalidTimingAndMediaBounds(t *testing.T) {
+	for _, tc := range []struct {
+		name string
+		body string
+	}{
+		{
+			name: "negative tmax",
+			body: `{"id":"a","tmax":-1,"site":{"domain":"example.com"},"imp":[{"id":"1","banner":{"w":300,"h":250}}]}`,
+		},
+		{
+			name: "negative banner width",
+			body: `{"id":"a","site":{"domain":"example.com"},"imp":[{"id":"1","banner":{"w":-300,"h":250}}]}`,
+		},
+		{
+			name: "negative video duration",
+			body: `{"id":"a","app":{"bundle":"com.example"},"imp":[{"id":"1","video":{"mimes":["video/mp4"],"minduration":-1,"maxduration":30}}]}`,
+		},
+		{
+			name: "video min exceeds max",
+			body: `{"id":"a","app":{"bundle":"com.example"},"imp":[{"id":"1","video":{"mimes":["video/mp4"],"minduration":45,"maxduration":30}}]}`,
+		},
+		{
+			name: "negative video dimensions",
+			body: `{"id":"a","app":{"bundle":"com.example"},"imp":[{"id":"1","video":{"mimes":["video/mp4"],"w":-1,"h":720}}]}`,
+		},
+		{
+			name: "audio min exceeds max",
+			body: `{"id":"a","app":{"bundle":"com.example"},"imp":[{"id":"1","audio":{"mimes":["audio/mpeg"],"minduration":45,"maxduration":30}}]}`,
+		},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			if _, err := DecodeRequest([]byte(tc.body)); err == nil {
+				t.Fatal("expected malformed request")
+			}
+		})
+	}
+}
+
 func TestValidateBidResponseRequiresNoticeOrProofExt(t *testing.T) {
 	req := &BidRequest{
 		ID:   "auction",

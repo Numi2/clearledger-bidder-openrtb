@@ -26,6 +26,7 @@ The production signature base is documented in `docs/clearledger-contract.md`. T
 - `id`, `tmax`, `cur`
 - exactly one of `site` or `app`
 - one or more `imp` objects with exactly one media object: `banner`, `video`, `audio`, or `native`
+- non-negative `tmax`, floor, media dimensions, and duration bounds; when both duration bounds are set, minimum cannot exceed maximum
 - floor and currency through `imp.bidfloor` / `imp.bidfloorcur`
 - PMP Deal ID through `imp.pmp.deals[].id` when ClearLedger sends private-auction inventory
 - optional `source.ext.schain`, `regs`, `device`, `user`, and `imp.ext.clearledger` proof fields
