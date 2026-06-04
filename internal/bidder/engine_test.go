@@ -86,9 +86,56 @@ func TestBidRejectsUnsupportedVideoMime(t *testing.T) {
 	}
 }
 
+func TestBidRejectsVideoCreativeOutsideRequestDuration(t *testing.T) {
+	cfg, req := sampleConfigAndRequest(t)
+	cfg.Campaigns[0].Creatives[0].Duration = 45
+	req.Imp[0].Video.MaxDuration = 30
+	decision := NewEngine(cfg).Bid(context.Background(), req, time.Now().UTC())
+	if !decision.NoBid || decision.Reason != "no_eligible_campaign" {
+		t.Fatalf("expected duration no-bid, got %#v", decision)
+	}
+}
+
+func TestBidRejectsVideoCreativeOutsideRequestDimensions(t *testing.T) {
+	cfg, req := sampleConfigAndRequest(t)
+	cfg.Campaigns[0].Creatives[0].W = 640
+	cfg.Campaigns[0].Creatives[0].H = 360
+	req.Imp[0].Video.W = 1280
+	req.Imp[0].Video.H = 720
+	decision := NewEngine(cfg).Bid(context.Background(), req, time.Now().UTC())
+	if !decision.NoBid || decision.Reason != "no_eligible_campaign" {
+		t.Fatalf("expected dimension no-bid, got %#v", decision)
+	}
+}
+
+func TestBidRejectsDisplayCreativeOutsideRequestDimensions(t *testing.T) {
+	cfg, req := sampleConfigAndRequest(t)
+	req.App = nil
+	req.Site = &openrtb.Site{Domain: "example.com"}
+	req.Cur = []string{"USD"}
+	req.Imp = []openrtb.Impression{{
+		ID:          "1",
+		TagID:       "display_1",
+		BidFloor:    1,
+		BidFloorCur: "USD",
+		Banner:      &openrtb.Banner{W: 728, H: 90},
+	}}
+	decision := NewEngine(cfg).Bid(context.Background(), req, time.Now().UTC())
+	if !decision.NoBid || decision.Reason != "no_eligible_campaign" {
+		t.Fatalf("expected display dimension no-bid, got %#v", decision)
+	}
+	req.Imp[0].Banner.W = 300
+	req.Imp[0].Banner.H = 250
+	decision = NewEngine(cfg).Bid(context.Background(), req, time.Now().UTC())
+	if decision.NoBid || decision.Response == nil {
+		t.Fatalf("expected display bid after matching dimensions, got %#v", decision)
+	}
+}
+
 func TestVASTDurationFormatsOverOneMinute(t *testing.T) {
 	cfg, req := sampleConfigAndRequest(t)
 	cfg.Campaigns[0].Creatives[0].Duration = 125
+	req.Imp[0].Video.MaxDuration = 180
 	decision := NewEngine(cfg).Bid(context.Background(), req, time.Now().UTC())
 	if decision.NoBid || decision.Response == nil {
 		t.Fatalf("expected bid, got %#v", decision)

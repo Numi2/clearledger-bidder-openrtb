@@ -366,12 +366,43 @@ func chooseCreative(mediaType string, req *openrtb.BidRequest, creatives []confi
 func creativeMatchesRequest(imp openrtb.Impression, creative config.Creative) bool {
 	switch imp.MediaType() {
 	case "video":
-		return mimeAllowed(imp.Video.Mimes, assetMime(creative, "video"))
+		return mimeAllowed(imp.Video.Mimes, assetMime(creative, "video")) &&
+			durationAllowed(imp.Video.MinDuration, imp.Video.MaxDuration, creative.Duration) &&
+			dimensionsAllowed(imp.Video.W, imp.Video.H, creative.W, creative.H)
 	case "audio":
-		return mimeAllowed(imp.Audio.Mimes, assetMime(creative, "audio"))
+		return mimeAllowed(imp.Audio.Mimes, assetMime(creative, "audio")) &&
+			durationAllowed(imp.Audio.MinDuration, imp.Audio.MaxDuration, creative.Duration)
+	case "display":
+		if imp.Banner == nil {
+			return true
+		}
+		return dimensionsAllowed(imp.Banner.W, imp.Banner.H, creative.W, creative.H)
 	default:
 		return true
 	}
+}
+
+func durationAllowed(minDuration, maxDuration, creativeDuration int) bool {
+	if creativeDuration <= 0 {
+		return true
+	}
+	if minDuration > 0 && creativeDuration < minDuration {
+		return false
+	}
+	if maxDuration > 0 && creativeDuration > maxDuration {
+		return false
+	}
+	return true
+}
+
+func dimensionsAllowed(requestW, requestH, creativeW, creativeH int) bool {
+	if requestW > 0 && creativeW > 0 && requestW != creativeW {
+		return false
+	}
+	if requestH > 0 && creativeH > 0 && requestH != creativeH {
+		return false
+	}
+	return true
 }
 
 func mimeAllowed(allowed []string, mime string) bool {

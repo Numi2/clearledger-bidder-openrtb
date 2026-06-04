@@ -95,7 +95,7 @@ Each campaign can constrain:
 - app ID, bundle, domain, placement, Deal ID, geo, media type
 - CPM bid, daily budget, QPS
 - creative approval, advertiser domain, landing URL, asset URL, VAST/display/native rendering
-- request currency, PMP Deal currency, media MIME compatibility, blocked advertiser domains, COPPA, and limited-ad-tracking constraints
+- request currency, PMP Deal currency, media MIME compatibility, creative duration, media dimensions, blocked advertiser domains, COPPA, and limited-ad-tracking constraints
 
 ## Operations Endpoints
 
