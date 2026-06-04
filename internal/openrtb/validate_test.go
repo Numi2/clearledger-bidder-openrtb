@@ -100,6 +100,18 @@ func TestDecodeRequestRejectsInvalidTimingAndMediaBounds(t *testing.T) {
 			name: "audio min exceeds max",
 			body: `{"id":"a","app":{"bundle":"com.example"},"imp":[{"id":"1","audio":{"mimes":["audio/mpeg"],"minduration":45,"maxduration":30}}]}`,
 		},
+		{
+			name: "malformed native request",
+			body: `{"id":"a","site":{"domain":"example.com"},"imp":[{"id":"1","native":{"request":"not-json"}}]}`,
+		},
+		{
+			name: "native request without assets",
+			body: `{"id":"a","site":{"domain":"example.com"},"imp":[{"id":"1","native":{"request":"{\"native\":{\"ver\":\"1.2\",\"assets\":[]}}"}}]}`,
+		},
+		{
+			name: "native request duplicate asset ids",
+			body: `{"id":"a","site":{"domain":"example.com"},"imp":[{"id":"1","native":{"request":"{\"native\":{\"ver\":\"1.2\",\"assets\":[{\"id\":1},{\"id\":1}]}}"}}]}`,
+		},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			if _, err := DecodeRequest([]byte(tc.body)); err == nil {
@@ -475,6 +487,42 @@ func TestValidateBidResponseRejectsVASTOutsideMediaConstraints(t *testing.T) {
 		t.Fatal("expected VAST media constraints to fail")
 	}
 	resp.SeatBid[0].Bid[0].AdM = `<VAST version="4.3"><Ad><InLine><Impression>https://example.com/i</Impression><Creatives><Creative><Linear><Duration>00:00:30</Duration><MediaFiles><MediaFile delivery="progressive" type="video/mp4" width="1280" height="720">https://example.com/a.mp4</MediaFile></MediaFiles></Linear></Creative></Creatives></InLine></Ad></VAST>`
+	if err := ValidateBidResponse(req, resp); err != nil {
+		t.Fatal(err)
+	}
+}
+
+func TestValidateBidResponseRequiresNativeRequiredAssets(t *testing.T) {
+	req := &BidRequest{
+		ID:   "auction",
+		Cur:  []string{"USD"},
+		Site: &Site{Domain: "example.com"},
+		Imp: []Impression{{
+			ID:       "1",
+			BidFloor: 1,
+			Native:   &Native{Request: `{"native":{"ver":"1.2","assets":[{"id":1,"required":1},{"id":2}]}}`},
+		}},
+	}
+	resp := &BidResponse{
+		ID:  "auction",
+		Cur: "USD",
+		SeatBid: []SeatBid{{
+			Seat: "seat",
+			Bid: []Bid{{
+				ID:      "bid",
+				ImpID:   "1",
+				Price:   1,
+				CrID:    "creative",
+				Adomain: []string{"advertiser.com"},
+				AdM:     `{"native":{"assets":[{"id":2,"title":{"text":"creative"}}],"link":{"url":"https://advertiser.com"},"imptrackers":["https://tracker.example/imp"]}}`,
+				NURL:    "https://bidder.example/win",
+			}},
+		}},
+	}
+	if err := ValidateBidResponse(req, resp); err == nil {
+		t.Fatal("expected missing required native asset rejection")
+	}
+	resp.SeatBid[0].Bid[0].AdM = `{"native":{"assets":[{"id":1,"title":{"text":"creative"}}],"link":{"url":"https://advertiser.com"},"imptrackers":["https://tracker.example/imp"]}}`
 	if err := ValidateBidResponse(req, resp); err != nil {
 		t.Fatal(err)
 	}

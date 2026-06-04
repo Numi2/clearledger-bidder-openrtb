@@ -113,5 +113,14 @@ func validateMediaObject(idx int, imp Impression) error {
 			return fmt.Errorf("%w: imp[%d].audio minduration cannot exceed maxduration", ErrMalformed, idx)
 		}
 	}
+	if imp.Native != nil {
+		info, err := parseNativeRequest(imp.Native.Request)
+		if err != nil {
+			return fmt.Errorf("%w: imp[%d].native.request %v", ErrMalformed, idx, err)
+		}
+		if len(info.assets) == 0 {
+			return fmt.Errorf("%w: imp[%d].native.request must include assets", ErrMalformed, idx)
+		}
+	}
 	return nil
 }

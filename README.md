@@ -2,7 +2,47 @@
 
 Open-source reference bidder for ClearLedger approved-buyer endpoints. It runs as a standalone HTTP service, accepts OpenRTB 2.6-compatible JSON bid requests, evaluates local campaign/budget/creative rules, and returns either `204 No Content` or a valid OpenRTB bid response before `tmax`.
 
-This repository is only the bidder runtime. ClearLedger clearing, receipts, billing proof, settlement proof, publisher net, ClearLedger fee, payout workflow, marketplace/operator workflow, and final receipt network remain proprietary ClearLedger infrastructure.
+The design goal is simple: demand can run anywhere, while ClearLedger remains the transaction authority. Agencies, brands, and buying teams can operate this bidder on their own infrastructure, connect campaigns and creatives locally, and register the endpoint with ClearLedger as an approved buyer. ClearLedger continues to own signed fanout, lane enforcement, winner validation, delivery proof, billing proof, settlement proof, publisher net, ClearLedger fee, payout workflow, and final receipt production.
+
+This repository is only the bidder runtime and its local operator tooling. It intentionally does not include the ClearLedger ad server, clearing system, receipt network, marketplace, operator workflow, payment workflow, or settlement infrastructure.
+
+## What You Get
+
+- Production-shaped OpenRTB HTTP endpoint: `POST /openrtb`.
+- Optional multi-buyer route shape: `POST /buyers/{buyer}/openrtb`.
+- Local campaign, budget, pacing, QPS, placement, Deal ID, privacy, and creative rule evaluation.
+- VAST, display, and OpenRTB Native markup generation and validation helpers.
+- ClearLedger-compatible auth, request signing, proof extensions, notice URLs, and registration payloads.
+- Health, readiness, Prometheus metrics, sanitized state, and local notice callback endpoints.
+- Certification and ClearLedger lane harnesses that prove the bidder can run standalone and connect to a ClearLedger approved-buyer lane.
+- Docker, Compose, sample OpenRTB requests/responses, sample campaign config, and CI tests.
+
+## What Stays In ClearLedger
+
+ClearLedger remains responsible for everything that makes the transaction provable and payable:
+
+- auction router, Redis runtime manifest, lane/package/placement enforcement, and approved buyer fanout
+- bid-response validation, winner selection, VAST/adm return to supply, and delivery tracking
+- raw evidence archive, receipt event processing, billing proof, settlement proof, publisher net, ClearLedger fee, payout workflow, and final receipt creation
+
+The bidder decides whether to bid. ClearLedger proves what delivered and what is billable.
+
+## Supported User Flow
+
+This does not require a bidder website. The supported flow is CLI/API first because the RTB hot path should stay small, auditable, and low-latency:
+
+1. Configure campaigns, budgets, targeting rules, and creatives in local JSON.
+2. Run `make test`, `make configcheck`, and `make bench`.
+3. Deploy the bidder on any HTTPS-capable server.
+4. Run `cmd/certify` against the public endpoint.
+5. Optionally run `cmd/clearledger-harness` with a ClearLedger-style runtime manifest for local lane proof.
+6. Submit the approved-buyer registration payload to ClearLedger.
+7. ClearLedger publishes the approved buyer in its runtime manifest and starts signed OpenRTB fanout.
+8. Monitor `/readyz`, `/metrics`, `/statez`, and notice callback counts while ClearLedger owns billable delivery, settlement, payout, and final receipts.
+
+Agencies can build their own UI on top of the JSON config and operator endpoints if they want one. The open-source runtime itself stays focused on the programmatic decision path.
+
+If you want ClearLedger to configure this bidder for your campaigns, rules, creatives, and buying workflow, contact your success representative or Tony, CEO of ClearLedger, at `tony@clearledger.org` or `+1 (832) 696-9666`.
 
 ## Runtime Contract
 
@@ -27,6 +67,7 @@ The production signature base is documented in `docs/clearledger-contract.md`. T
 - exactly one of `site` or `app`
 - one or more `imp` objects with exactly one media object: `banner`, `video`, `audio`, or `native`
 - non-negative `tmax`, floor, media dimensions, and duration bounds; when both duration bounds are set, minimum cannot exceed maximum
+- for native inventory, `imp.native.request` must be parseable OpenRTB Native JSON with unique positive asset IDs
 - floor and currency through `imp.bidfloor` / `imp.bidfloorcur`
 - PMP Deal ID through `imp.pmp.deals[].id` when ClearLedger sends private-auction inventory
 - optional `source.ext.schain`, `regs`, `device`, `user`, and `imp.ext.clearledger` proof fields
@@ -44,11 +85,13 @@ Bid responses include:
 
 When `imp.ext.clearledger.receipt_required` is true, the validator requires `bid.ext.clearledger` to include buyer, campaign, and creative IDs and to echo any ClearLedger lane/package/placement/proof fields from the request.
 
-For video and audio, `bid.adm` must be parseable VAST with an impression, duration, and media file. When the request declares media constraints, the validator checks VAST duration against `minduration`/`maxduration`, checks `MediaFile type` against requested `mimes`, and checks video media dimensions when both the request and VAST provide dimensions.
+For video and audio, `bid.adm` must be parseable VAST with an impression, duration, and media file. When the request declares media constraints, the validator checks VAST duration against `minduration`/`maxduration`, checks `MediaFile type` against requested `mimes`, and checks video media dimensions when both the request and VAST provide dimensions. For native, `bid.adm` must be OpenRTB Native response JSON with a landing link and must include every asset ID marked required in `imp.native.request`.
 
 No-bid is `204 No Content`. Malformed OpenRTB is `400`.
 
 ## Quickstart
+
+Run the local bidder and post a sample OpenRTB request:
 
 ```bash
 make test
@@ -131,7 +174,7 @@ Keep `BIDDER_HTTP_WRITE_TIMEOUT_MS` above the largest ClearLedger buyer timeout 
 
 ## ClearLedger Registration Mode
 
-Register the endpoint after deployment:
+After deployment, generate and submit the approved-buyer registration payload:
 
 ```bash
 export CLEARLEDGER_REGISTER_URL='https://api.clearledger.org/v1/approved-buyers'
@@ -145,7 +188,7 @@ go run ./cmd/bidder -config config/campaigns.sample.json -register
 
 ## Endpoint Certification
 
-Run the certification harness against a deployed endpoint before asking ClearLedger to approve it:
+Run the certification harness against a deployed endpoint before asking ClearLedger to approve it. This is the agency/operator preflight check:
 
 ```bash
 go run ./cmd/certify \
@@ -156,7 +199,7 @@ go run ./cmd/certify \
   -signing-secret "$BIDDER_OPENRTB_SIGNING_SECRET"
 ```
 
-The harness checks readiness, production ClearLedger identity/signature headers, valid bid response shape for video, audio, display, and native samples, controlled no-bid, malformed request rejection, and OpenRTB bid-response validation including response currency, approved buyer identity proof, VAST MIME, duration, and dimension constraints.
+The harness checks readiness, production ClearLedger identity/signature headers, valid bid response shape for video, audio, display, and native samples, controlled no-bid, malformed request rejection, and OpenRTB bid-response validation including response currency, approved buyer identity proof, native required assets, VAST MIME, duration, and dimension constraints.
 
 Run one sample only when debugging a specific format:
 
@@ -168,7 +211,9 @@ go run ./cmd/certify \
 
 ## ClearLedger Lane Harness
 
-For local end-to-end compatibility without private ClearLedger services, run the ClearLedger-side harness. It reads `samples/clearledger-runtime-manifest.local.json`, enforces the active lane and approved buyer route, skips buyers whose protocol or allowed formats do not match the request, applies each buyer's manifest timeout, signs OpenRTB fanout, classifies each buyer as skipped/bid/no-bid/invalid/error, validates bid responses including currency and `bid.ext.clearledger.buyer_id` against the approved buyer, selects the highest valid bid, builds the VAST/adm supply response, and emits proof steps showing that delivery tracking, billing, settlement, publisher net, ClearLedger fee, and final receipts stay outside the bidder.
+For local end-to-end compatibility without private ClearLedger services, run the ClearLedger-side harness. It simulates the production boundary from the ClearLedger side: runtime manifest lookup, active lane enforcement, approved buyer routing, signed OpenRTB fanout, buyer timeout handling, bid/no-bid/error classification, bid validation, winner selection, supply response construction, and proof ownership reporting.
+
+The harness reads `samples/clearledger-runtime-manifest.local.json`, applies lane floor, placement, app bundle, Deal ID, timeout, media format, and proof-extension rules, then emits proof steps showing that delivery tracking, billing, settlement, publisher net, ClearLedger fee, and final receipts stay outside the bidder.
 
 ```bash
 export BIDDER_OPENRTB_AUTH_TOKEN='token'
@@ -186,20 +231,6 @@ ClearLedger will still certify the endpoint, enforce the approved buyer lane, va
 ## Performance Posture
 
 The bidder keeps the OpenRTB hot path in-process: campaign config is loaded and compiled at startup, budget/QPS/pacing state is protected by a short mutex, and bid IDs are deterministic from auction ID, impression ID, campaign ID, and creative ID. Local spend and QPS reservations are only committed for bids the bidder actually returns; controlled no-bids do not consume local QPS. Use `make bench` to run the hot-path benchmark before changing auction logic.
-
-## User Flow
-
-This does not require a bidder website. The open-source bidder is an HTTP service plus CLI tools because the runtime path must stay small and low-latency. Agencies can build their own UI on top of the JSON config and endpoints if they want one, but the supported user flow is CLI/API first:
-
-1. Configure local campaigns in JSON.
-2. Deploy the bidder on any HTTPS-capable server.
-3. Run `cmd/certify` against the public endpoint.
-4. Optionally run `cmd/clearledger-harness` with a ClearLedger-style runtime manifest for local lane proof.
-5. Submit the approved-buyer registration payload to ClearLedger.
-6. ClearLedger publishes the approved buyer in the Redis runtime manifest and starts signed OpenRTB fanout.
-7. Monitor `/readyz`, `/metrics`, `/statez`, and notice callback counts while ClearLedger owns delivery proof, billable events, settlement, publisher net, fee computation, payout workflow, and final receipts.
-
-If you want ClearLedger to configure this bidder for your campaigns, rules, creatives, and buying workflow, contact your success representative or Tony, CEO of ClearLedger, at `tony@clearledger.org` or `+1 (832) 696-9666`.
 
 ## Compose
 

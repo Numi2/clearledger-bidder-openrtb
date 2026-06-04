@@ -97,7 +97,7 @@ func TestDisplayAndNativeMarkup(t *testing.T) {
 	if !strings.Contains(rr.Body.String(), "<img") {
 		t.Fatalf("expected display adm: %s", rr.Body.String())
 	}
-	native := []byte(`{"id":"native_auction","tmax":100,"site":{"domain":"example.com"},"imp":[{"id":"1","tagid":"native_1","bidfloor":1,"bidfloorcur":"USD","native":{"request":"{}"}}]}`)
+	native := []byte(`{"id":"native_auction","tmax":100,"site":{"domain":"example.com"},"imp":[{"id":"1","tagid":"native_1","bidfloor":1,"bidfloorcur":"USD","native":{"request":"{\"native\":{\"ver\":\"1.2\",\"assets\":[{\"id\":1,\"required\":1,\"title\":{\"len\":80}}]}}"}}]}`)
 	rr = post(t, h, native)
 	if rr.Code != http.StatusOK {
 		t.Fatalf("native status=%d body=%s", rr.Code, rr.Body.String())

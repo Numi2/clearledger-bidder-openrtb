@@ -148,8 +148,8 @@ func ValidateAdMarkup(imp Impression, adm string) error {
 			return err
 		}
 	case "native":
-		if !LooksLikeNativeAdM(adm) {
-			return fmt.Errorf("adm must be OpenRTB native response JSON for native impressions")
+		if err := validateNativeMarkup(imp, adm); err != nil {
+			return err
 		}
 	case "display":
 		if !LooksLikeDisplayAdM(adm) {
@@ -171,6 +171,55 @@ func LooksLikeDisplayAdM(adm string) bool {
 }
 
 func LooksLikeNativeAdM(adm string) bool {
+	info, err := parseNativeResponse(adm)
+	return err == nil && len(info.assetIDs) > 0 && strings.TrimSpace(info.linkURL) != ""
+}
+
+type nativeRequestInfo struct {
+	assets      []int
+	requiredIDs map[int]struct{}
+}
+
+type nativeResponseInfo struct {
+	assetIDs map[int]struct{}
+	linkURL  string
+}
+
+func parseNativeRequest(raw string) (nativeRequestInfo, error) {
+	raw = strings.TrimSpace(raw)
+	if raw == "" {
+		return nativeRequestInfo{}, fmt.Errorf("is required")
+	}
+	var body struct {
+		Native struct {
+			Assets []struct {
+				ID       int `json:"id"`
+				Required int `json:"required,omitempty"`
+			} `json:"assets"`
+		} `json:"native"`
+	}
+	if err := json.Unmarshal([]byte(raw), &body); err != nil {
+		return nativeRequestInfo{}, fmt.Errorf("must be valid OpenRTB native JSON")
+	}
+	info := nativeRequestInfo{requiredIDs: map[int]struct{}{}}
+	seen := map[int]struct{}{}
+	for _, asset := range body.Native.Assets {
+		if asset.ID <= 0 {
+			return nativeRequestInfo{}, fmt.Errorf("asset ids must be positive")
+		}
+		if _, ok := seen[asset.ID]; ok {
+			return nativeRequestInfo{}, fmt.Errorf("asset ids must be unique")
+		}
+		seen[asset.ID] = struct{}{}
+		info.assets = append(info.assets, asset.ID)
+		if asset.Required == 1 {
+			info.requiredIDs[asset.ID] = struct{}{}
+		}
+	}
+	return info, nil
+}
+
+func parseNativeResponse(adm string) (nativeResponseInfo, error) {
 	var body struct {
 		Native struct {
 			Assets []struct {
@@ -179,13 +228,42 @@ func LooksLikeNativeAdM(adm string) bool {
 			Link struct {
 				URL string `json:"url"`
 			} `json:"link"`
-			ImpTrackers []string `json:"imptrackers"`
 		} `json:"native"`
 	}
 	if err := json.Unmarshal([]byte(adm), &body); err != nil {
-		return false
+		return nativeResponseInfo{}, err
 	}
-	return len(body.Native.Assets) > 0 && strings.TrimSpace(body.Native.Link.URL) != ""
+	info := nativeResponseInfo{assetIDs: map[int]struct{}{}, linkURL: body.Native.Link.URL}
+	for _, asset := range body.Native.Assets {
+		if asset.ID <= 0 {
+			return nativeResponseInfo{}, fmt.Errorf("native response asset ids must be positive")
+		}
+		if _, ok := info.assetIDs[asset.ID]; ok {
+			return nativeResponseInfo{}, fmt.Errorf("native response asset ids must be unique")
+		}
+		info.assetIDs[asset.ID] = struct{}{}
+	}
+	return info, nil
+}
+
+func validateNativeMarkup(imp Impression, adm string) error {
+	reqInfo, err := parseNativeRequest(imp.Native.Request)
+	if err != nil {
+		return fmt.Errorf("native request is invalid: %v", err)
+	}
+	respInfo, err := parseNativeResponse(adm)
+	if err != nil {
+		return fmt.Errorf("adm must be OpenRTB native response JSON for native impressions")
+	}
+	if len(respInfo.assetIDs) == 0 || strings.TrimSpace(respInfo.linkURL) == "" {
+		return fmt.Errorf("adm must be OpenRTB native response JSON for native impressions")
+	}
+	for requiredID := range reqInfo.requiredIDs {
+		if _, ok := respInfo.assetIDs[requiredID]; !ok {
+			return fmt.Errorf("native adm missing required asset id %d", requiredID)
+		}
+	}
+	return nil
 }
 
 func validateBidMediaConstraints(imp Impression, bid Bid) error {
