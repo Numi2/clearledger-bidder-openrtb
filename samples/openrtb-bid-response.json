@@ -1,0 +1,33 @@
+{
+  "id": "auction_123",
+  "cur": "USD",
+  "seatbid": [
+    {
+      "seat": "agency_seat_1",
+      "bid": [
+        {
+          "id": "bid_example",
+          "impid": "1",
+          "price": 9.25,
+          "adid": "creative_video_789",
+          "cid": "campaign_video_1",
+          "crid": "creative_video_789",
+          "adomain": ["advertiser.com"],
+          "dealid": "deal_clearledger_123",
+          "adm": "<VAST version=\"4.3\">...</VAST>",
+          "nurl": "https://agency-bidder.example.com/events/win?auction_id=auction_123&bid_id=bid_example",
+          "burl": "https://agency-bidder.example.com/events/bill?auction_id=auction_123&bid_id=bid_example",
+          "lurl": "https://agency-bidder.example.com/events/loss?auction_id=auction_123&bid_id=bid_example",
+          "ext": {
+            "clearledger": {
+              "buyer_id": "agency_bidder_1",
+              "campaign_id": "campaign_video_1",
+              "creative_id": "creative_video_789",
+              "bidder": "clearledger-bidder-openrtb"
+            }
+          }
+        }
+      ]
+    }
+  ]
+}

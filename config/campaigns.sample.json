@@ -1,0 +1,73 @@
+{
+  "public_endpoint": "http://localhost:8080",
+  "buyer_id": "agency_bidder_1",
+  "seat": "agency_seat_1",
+  "currency": "USD",
+  "campaigns": [
+    {
+      "id": "campaign_video_1",
+      "enabled": true,
+      "bid_cpm": 9.25,
+      "daily_budget": 100.0,
+      "qps": 100,
+      "allowed_apps": ["app_123"],
+      "allowed_bundles": ["com.example.app"],
+      "allowed_placements": ["placement_123"],
+      "deal_ids": ["deal_clearledger_123"],
+      "geo_countries": ["USA"],
+      "media_types": ["video"],
+      "creatives": [
+        {
+          "id": "creative_video_789",
+          "adomain": ["advertiser.com"],
+          "media_type": "video",
+          "asset_url": "https://cdn.example.com/creative.mp4",
+          "landing_url": "https://advertiser.com",
+          "duration": 30,
+          "w": 1280,
+          "h": 720,
+          "approved": true
+        }
+      ]
+    },
+    {
+      "id": "campaign_display_1",
+      "enabled": true,
+      "bid_cpm": 4.5,
+      "daily_budget": 50.0,
+      "allowed_domains": ["example.com"],
+      "allowed_placements": ["display_1"],
+      "media_types": ["display"],
+      "creatives": [
+        {
+          "id": "creative_display_1",
+          "adomain": ["advertiser.com"],
+          "media_type": "display",
+          "asset_url": "https://cdn.example.com/banner.png",
+          "landing_url": "https://advertiser.com",
+          "w": 300,
+          "h": 250,
+          "approved": true
+        }
+      ]
+    },
+    {
+      "id": "campaign_native_1",
+      "enabled": true,
+      "bid_cpm": 5.0,
+      "daily_budget": 50.0,
+      "allowed_domains": ["example.com"],
+      "allowed_placements": ["native_1"],
+      "media_types": ["native"],
+      "creatives": [
+        {
+          "id": "creative_native_1",
+          "adomain": ["advertiser.com"],
+          "media_type": "native",
+          "landing_url": "https://advertiser.com",
+          "approved": true
+        }
+      ]
+    }
+  ]
+}

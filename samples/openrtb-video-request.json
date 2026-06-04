@@ -1,0 +1,61 @@
+{
+  "id": "auction_123",
+  "tmax": 400,
+  "at": 1,
+  "cur": ["USD"],
+  "source": {
+    "fd": 1,
+    "tid": "auction_123",
+    "ext": {
+      "schain": {
+        "complete": 1,
+        "nodes": [{ "asi": "clearledger.org", "sid": "publisher_123", "hp": 1 }]
+      }
+    }
+  },
+  "app": {
+    "id": "app_123",
+    "name": "Example App",
+    "bundle": "com.example.app",
+    "storeurl": "https://apps.apple.com/app/example"
+  },
+  "device": {
+    "ua": "Mozilla/5.0",
+    "ip": "203.0.113.10",
+    "ifa": "00000000-0000-0000-0000-000000000000",
+    "lmt": 0,
+    "geo": { "country": "USA" }
+  },
+  "regs": { "coppa": 0, "gpp": "DBABLA~", "gpp_sid": [7] },
+  "user": { "id": "user_or_partner_id" },
+  "imp": [
+    {
+      "id": "1",
+      "secure": 1,
+      "bidfloor": 9.0,
+      "bidfloorcur": "USD",
+      "tagid": "placement_123",
+      "video": {
+        "mimes": ["video/mp4"],
+        "minduration": 5,
+        "maxduration": 30,
+        "protocols": [2, 3, 5, 6],
+        "w": 1280,
+        "h": 720
+      },
+      "pmp": {
+        "private_auction": 1,
+        "deals": [{ "id": "deal_clearledger_123", "bidfloor": 9.0, "bidfloorcur": "USD", "at": 1 }]
+      },
+      "ext": {
+        "clearledger": {
+          "lane_id": "lane_123",
+          "package_id": "package_123",
+          "placement_id": "placement_123",
+          "proof_run_id": "proof_123",
+          "receipt_required": true
+        }
+      }
+    }
+  ]
+}
