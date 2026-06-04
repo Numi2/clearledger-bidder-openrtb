@@ -40,6 +40,8 @@ Bid responses include:
 - `nurl`, `burl`, `lurl` notice URLs
 - `bid.ext.clearledger` with buyer/campaign/creative identifiers plus echoed ClearLedger lane/package/placement/proof fields when present in `imp.ext.clearledger`
 
+When `imp.ext.clearledger.receipt_required` is true, the validator requires `bid.ext.clearledger` to include buyer, campaign, and creative IDs and to echo any ClearLedger lane/package/placement/proof fields from the request.
+
 No-bid is `204 No Content`. Malformed OpenRTB is `400`.
 
 ## Quickstart

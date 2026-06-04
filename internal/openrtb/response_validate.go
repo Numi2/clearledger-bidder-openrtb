@@ -60,6 +60,9 @@ func ValidateBidResponse(req *BidRequest, resp *BidResponse) error {
 			if bid.NURL == "" && bid.BURL == "" && bid.LURL == "" && !hasClearLedgerExt(bid.Ext) {
 				return fmt.Errorf("bid requires notice URLs or ext.clearledger proof fields")
 			}
+			if err := validateClearLedgerProofExt(impIDs[bid.ImpID], bid); err != nil {
+				return err
+			}
 			if len(dealIDs) > 0 {
 				if bid.DealID == "" {
 					return fmt.Errorf("dealid is required for PMP requests")
@@ -131,6 +134,56 @@ func hasClearLedgerExt(ext map[string]any) bool {
 	}
 	_, ok := ext["clearledger"]
 	return ok
+}
+
+func validateClearLedgerProofExt(imp Impression, bid Bid) error {
+	reqExt, ok := clearLedgerExt(imp.Ext)
+	if !ok {
+		return nil
+	}
+	receiptRequired, _ := reqExt["receipt_required"].(bool)
+	if !receiptRequired {
+		return nil
+	}
+	bidExt, ok := clearLedgerExt(bid.Ext)
+	if !ok {
+		return fmt.Errorf("bid.ext.clearledger is required when receipt_required is true")
+	}
+	for _, key := range []string{"buyer_id", "campaign_id", "creative_id"} {
+		if strings.TrimSpace(stringValue(bidExt[key])) == "" {
+			return fmt.Errorf("bid.ext.clearledger.%s is required when receipt_required is true", key)
+		}
+	}
+	for _, key := range []string{"lane_id", "private_market_id", "package_id", "placement_id", "proof_run_id"} {
+		reqValue := strings.TrimSpace(stringValue(reqExt[key]))
+		if reqValue == "" {
+			continue
+		}
+		if strings.TrimSpace(stringValue(bidExt[key])) != reqValue {
+			return fmt.Errorf("bid.ext.clearledger.%s must match request proof field", key)
+		}
+	}
+	if value, ok := bidExt["receipt_required"].(bool); !ok || !value {
+		return fmt.Errorf("bid.ext.clearledger.receipt_required must be true")
+	}
+	return nil
+}
+
+func clearLedgerExt(ext map[string]any) (map[string]any, bool) {
+	if ext == nil {
+		return nil, false
+	}
+	value, ok := ext["clearledger"].(map[string]any)
+	return value, ok
+}
+
+func stringValue(value any) string {
+	switch v := value.(type) {
+	case string:
+		return v
+	default:
+		return ""
+	}
 }
 
 func containsFold(values []string, needle string) bool {

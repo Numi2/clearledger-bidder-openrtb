@@ -170,10 +170,25 @@ func writeTestBidResponse(t *testing.T, w http.ResponseWriter, r *http.Request, 
 	}
 	reqID, _ := req["id"].(string)
 	impID := "1"
+	clearLedgerExt := map[string]any{
+		"buyer_id":         buyerID,
+		"campaign_id":      "campaign_" + buyerID,
+		"creative_id":      "creative_" + buyerID,
+		"receipt_required": true,
+	}
 	if imps, ok := req["imp"].([]any); ok && len(imps) > 0 {
 		if imp, ok := imps[0].(map[string]any); ok {
 			if raw, ok := imp["id"].(string); ok && raw != "" {
 				impID = raw
+			}
+			if ext, ok := imp["ext"].(map[string]any); ok {
+				if cl, ok := ext["clearledger"].(map[string]any); ok {
+					for _, key := range []string{"lane_id", "private_market_id", "package_id", "placement_id", "proof_run_id", "receipt_required"} {
+						if value, ok := cl[key]; ok {
+							clearLedgerExt[key] = value
+						}
+					}
+				}
 			}
 		}
 	}
@@ -192,6 +207,7 @@ func writeTestBidResponse(t *testing.T, w http.ResponseWriter, r *http.Request, 
 				"dealid":  dealID,
 				"adm":     `<VAST version="4.3"><Ad><InLine><Impression><![CDATA[https://clearledger.example/imp]]></Impression><Creatives><Creative><Linear><Duration>00:00:30</Duration><MediaFiles><MediaFile delivery="progressive" type="video/mp4"><![CDATA[https://cdn.example.com/ad.mp4]]></MediaFile></MediaFiles></Linear></Creative></Creatives></InLine></Ad></VAST>`,
 				"nurl":    "https://clearledger.example/win",
+				"ext":     map[string]any{"clearledger": clearLedgerExt},
 			}},
 		}},
 	}

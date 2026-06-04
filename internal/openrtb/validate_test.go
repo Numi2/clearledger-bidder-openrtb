@@ -28,7 +28,16 @@ func TestValidateBidResponse(t *testing.T) {
 				Adomain: []string{"advertiser.com"},
 				DealID:  "deal_clearledger_123",
 				AdM:     `<VAST version="4.3"><Ad><InLine><Impression>https://example.com/i</Impression><Creatives><Creative><Linear><Duration>00:00:30</Duration><MediaFiles><MediaFile>https://example.com/a.mp4</MediaFile></MediaFiles></Linear></Creative></Creatives></InLine></Ad></VAST>`,
-				Ext:     map[string]any{"clearledger": map[string]any{"buyer_id": "buyer"}},
+				Ext: map[string]any{"clearledger": map[string]any{
+					"buyer_id":         "buyer",
+					"campaign_id":      "campaign",
+					"creative_id":      "creative_1",
+					"lane_id":          "lane_123",
+					"package_id":       "package_123",
+					"placement_id":     "placement_123",
+					"proof_run_id":     "proof_123",
+					"receipt_required": true,
+				}},
 			}},
 		}},
 	}
@@ -88,6 +97,57 @@ func TestValidateBidResponseRequiresNoticeOrProofExt(t *testing.T) {
 		t.Fatal("expected missing notices/proof ext rejection")
 	}
 	resp.SeatBid[0].Bid[0].NURL = "https://bidder.example/win"
+	if err := ValidateBidResponse(req, resp); err != nil {
+		t.Fatal(err)
+	}
+}
+
+func TestValidateBidResponseRequiresClearLedgerProofFieldsWhenReceiptRequired(t *testing.T) {
+	req := &BidRequest{
+		ID:   "auction",
+		Cur:  []string{"USD"},
+		Site: &Site{Domain: "example.com"},
+		Imp: []Impression{{
+			ID:       "1",
+			BidFloor: 1,
+			Banner:   &Banner{W: 300, H: 250},
+			Ext: map[string]any{"clearledger": map[string]any{
+				"lane_id":          "lane",
+				"placement_id":     "placement",
+				"proof_run_id":     "proof",
+				"receipt_required": true,
+			}},
+		}},
+	}
+	resp := &BidResponse{
+		ID:  "auction",
+		Cur: "USD",
+		SeatBid: []SeatBid{{
+			Seat: "seat",
+			Bid: []Bid{{
+				ID:      "bid",
+				ImpID:   "1",
+				Price:   1,
+				CrID:    "creative",
+				Adomain: []string{"advertiser.com"},
+				AdM:     `<img src="https://cdn.example/ad.png">`,
+				NURL:    "https://bidder.example/win",
+				Ext: map[string]any{"clearledger": map[string]any{
+					"buyer_id":         "buyer",
+					"campaign_id":      "campaign",
+					"creative_id":      "creative",
+					"lane_id":          "wrong",
+					"placement_id":     "placement",
+					"proof_run_id":     "proof",
+					"receipt_required": true,
+				}},
+			}},
+		}},
+	}
+	if err := ValidateBidResponse(req, resp); err == nil {
+		t.Fatal("expected proof field mismatch")
+	}
+	resp.SeatBid[0].Bid[0].Ext["clearledger"].(map[string]any)["lane_id"] = "lane"
 	if err := ValidateBidResponse(req, resp); err != nil {
 		t.Fatal(err)
 	}
