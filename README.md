@@ -27,6 +27,12 @@ ClearLedger remains responsible for everything that makes the transaction provab
 
 The bidder decides whether to bid. ClearLedger proves what delivered and what is billable.
 
+## Product Boundary
+
+This bidder is free to self-host. ClearLedger monetizes the network and operating layer around it: certified approved-buyer access, managed bidder hosting, premium exchange connectivity, campaign migration, optimization, reporting, SLA support, delivery proof, billing proof, settlement proof, publisher net, ClearLedger fee accounting, payout workflow, and final receipts.
+
+The bidder should never become a settlement system. It should stay easy to clone, configure, run, certify, and register.
+
 ## Supported User Flow
 
 This does not require a bidder website. The supported flow is CLI/API first because the RTB hot path should stay small, auditable, and low-latency:
@@ -181,10 +187,13 @@ export CLEARLEDGER_REGISTER_URL='https://api.clearledger.org/v1/approved-buyers'
 export CLEARLEDGER_API_KEY='...'
 export BIDDER_PUBLIC_ENDPOINT='https://agency-bidder.example.com'
 export BIDDER_OPENRTB_ENDPOINT='https://agency-bidder.example.com/openrtb'
+go run ./cmd/bidder -config config/campaigns.sample.json -registration-payload
 go run ./cmd/bidder -config config/campaigns.sample.json -register
 ```
 
 `BIDDER_PUBLIC_ENDPOINT` is the public base URL used for generated notice URLs such as `/events/imp`. `BIDDER_OPENRTB_ENDPOINT` is the exact endpoint ClearLedger should call for bid requests. If `BIDDER_OPENRTB_ENDPOINT` is omitted, registration derives it as `<BIDDER_PUBLIC_ENDPOINT>/openrtb`.
+
+Use `-registration-payload` first when you want to inspect or attach the approval payload without making a network call. The payload includes buyer identity, endpoint, OpenRTB contract, supported media, auth/signature requirements, certification checks, and safe operator endpoints. Use `-register` only when `CLEARLEDGER_REGISTER_URL` and `CLEARLEDGER_API_KEY` are configured for a real ClearLedger registration API.
 
 ## Endpoint Certification
 
@@ -200,6 +209,8 @@ go run ./cmd/certify \
 ```
 
 The harness checks readiness, production ClearLedger identity/signature headers, valid bid response shape for video, audio, display, and native samples, controlled no-bid, malformed request rejection, and OpenRTB bid-response validation including response currency, approved buyer identity proof, native required assets, VAST MIME, duration, and dimension constraints.
+
+The certification output is machine-readable JSON. It includes the endpoint, contract name, buyer and seat identity, timeout, per-media HTTP status and latency, supported media, auth/signature coverage, readiness, controlled no-bid, malformed rejection, and max observed certification latency. Agencies can attach this report when requesting ClearLedger approval; ClearLedger still runs its own certification before adding the endpoint to the runtime manifest.
 
 Run one sample only when debugging a specific format:
 
@@ -231,6 +242,8 @@ ClearLedger will still certify the endpoint, enforce the approved buyer lane, va
 ## Performance Posture
 
 The bidder keeps the OpenRTB hot path in-process: campaign config is loaded and compiled at startup, budget/QPS/pacing state is protected by a short mutex, and bid IDs are deterministic from auction ID, impression ID, campaign ID, and creative ID. Local spend and QPS reservations are only committed for bids the bidder actually returns; controlled no-bids do not consume local QPS. Use `make bench` to run the hot-path benchmark before changing auction logic.
+
+CI also runs `make bench-guard`, which fails if the reference video/PMP bid path crosses the configured regression threshold. The threshold is intentionally conservative; it is a tripwire for accidental slowdowns, not a replacement for production load testing.
 
 ## Compose
 

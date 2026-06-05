@@ -1,5 +1,37 @@
+# OS/editor noise
 .DS_Store
-bin/
-coverage.out
-*.test
+.idea/
+.vscode/
+*.swp
+*.swo
+
+# Local env and credential material
 .env
+.env.*
+!.env.example
+*.pem
+*.key
+*service-account*.json
+*credentials*.json
+clearledger-*.json
+
+# Build/test outputs
+/bin/
+/dist/
+/build/
+/coverage/
+coverage.out
+*.coverprofile
+*.prof
+*.test
+
+# Generated runtime artifacts
+/tmp/
+/.tmp/
+/output/
+/artifacts/
+/reports/
+/certification-reports/
+
+# Local planning/scratch notes
+/goal.md

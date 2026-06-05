@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"os"
+	"sort"
 	"strconv"
 	"strings"
 	"time"
@@ -66,6 +67,24 @@ type Creative struct {
 	BlockedCOPPA  bool     `json:"blocked_coppa,omitempty"`
 	RequiresIFA   bool     `json:"requires_ifa,omitempty"`
 	NoticeBaseURL string   `json:"notice_base_url,omitempty"`
+}
+
+type Summary struct {
+	OK                bool     `json:"ok"`
+	BuyerID           string   `json:"buyer_id"`
+	Seat              string   `json:"seat"`
+	Currency          string   `json:"currency"`
+	Campaigns         int      `json:"campaigns"`
+	EnabledCampaigns  int      `json:"enabled_campaigns"`
+	ApprovedCreatives int      `json:"approved_creatives"`
+	MediaTypes        []string `json:"media_types"`
+	DealIDs           int      `json:"deal_ids"`
+	Placements        int      `json:"placements"`
+	AuthRequired      bool     `json:"auth_required"`
+	SignatureRequired bool     `json:"signature_required"`
+	PublicEndpointSet bool     `json:"public_endpoint_set"`
+	OpenRTBEndpoint   string   `json:"openrtb_endpoint,omitempty"`
+	ReadinessNotes    []string `json:"readiness_notes,omitempty"`
 }
 
 func Load(path string) (Config, error) {
@@ -296,6 +315,65 @@ func (c Config) RegistrationEndpoint() string {
 		return base
 	}
 	return base + "/openrtb"
+}
+
+func (c Config) Summary() Summary {
+	mediaSet := map[string]struct{}{}
+	dealSet := map[string]struct{}{}
+	placementSet := map[string]struct{}{}
+	summary := Summary{
+		OK:                true,
+		BuyerID:           c.BuyerID,
+		Seat:              c.Seat,
+		Currency:          c.Currency,
+		Campaigns:         len(c.Campaigns),
+		AuthRequired:      c.RequireAuth,
+		SignatureRequired: c.RequireSignature,
+		PublicEndpointSet: strings.TrimSpace(c.PublicEndpoint) != "",
+		OpenRTBEndpoint:   c.RegistrationEndpoint(),
+	}
+	for _, campaign := range c.Campaigns {
+		if campaign.Enabled {
+			summary.EnabledCampaigns++
+		}
+		for _, mediaType := range campaign.MediaTypes {
+			mediaSet[normalizeMediaType(mediaType)] = struct{}{}
+		}
+		for _, dealID := range campaign.DealIDs {
+			if strings.TrimSpace(dealID) != "" {
+				dealSet[strings.TrimSpace(dealID)] = struct{}{}
+			}
+		}
+		for _, placement := range campaign.AllowedPlacements {
+			if strings.TrimSpace(placement) != "" {
+				placementSet[strings.TrimSpace(placement)] = struct{}{}
+			}
+		}
+		for _, creative := range campaign.Creatives {
+			if creative.Approved {
+				summary.ApprovedCreatives++
+			}
+		}
+	}
+	for mediaType := range mediaSet {
+		summary.MediaTypes = append(summary.MediaTypes, mediaType)
+	}
+	sort.Strings(summary.MediaTypes)
+	summary.DealIDs = len(dealSet)
+	summary.Placements = len(placementSet)
+	if summary.EnabledCampaigns == 0 {
+		summary.ReadinessNotes = append(summary.ReadinessNotes, "no enabled campaigns")
+	}
+	if c.RequireAuth && strings.TrimSpace(c.AuthToken) == "" {
+		summary.ReadinessNotes = append(summary.ReadinessNotes, "auth required but BIDDER_OPENRTB_AUTH_TOKEN is empty")
+	}
+	if c.RequireSignature && strings.TrimSpace(c.SigningSecret) == "" {
+		summary.ReadinessNotes = append(summary.ReadinessNotes, "signature required but BIDDER_OPENRTB_SIGNING_SECRET is empty")
+	}
+	if summary.OpenRTBEndpoint == "" {
+		summary.ReadinessNotes = append(summary.ReadinessNotes, "BIDDER_OPENRTB_ENDPOINT or BIDDER_PUBLIC_ENDPOINT is required before registration")
+	}
+	return summary
 }
 
 func (c Config) ReadHeaderTimeout() time.Duration {

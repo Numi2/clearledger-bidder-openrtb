@@ -18,12 +18,7 @@ func main() {
 		fmt.Fprintf(os.Stderr, "config invalid: %v\n", err)
 		os.Exit(1)
 	}
-	summary := map[string]any{
-		"ok":        true,
-		"buyer_id":  cfg.BuyerID,
-		"seat":      cfg.Seat,
-		"currency":  cfg.Currency,
-		"campaigns": len(cfg.Campaigns),
-	}
-	_ = json.NewEncoder(os.Stdout).Encode(summary)
+	enc := json.NewEncoder(os.Stdout)
+	enc.SetIndent("", "  ")
+	_ = enc.Encode(cfg.Summary())
 }

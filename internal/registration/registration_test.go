@@ -32,6 +32,9 @@ func TestPayloadDerivesOpenRTBEndpointAndContractFields(t *testing.T) {
 	if !reflect.DeepEqual(payload["supported_media"], []string{"audio", "display", "native", "video"}) {
 		t.Fatalf("supported media=%#v", payload["supported_media"])
 	}
+	if payload["contract"] != "clearledger.openrtb.approved_buyer.v1" {
+		t.Fatalf("contract=%#v", payload["contract"])
+	}
 	auth := payload["auth"].(map[string]any)
 	if auth["bearer"] != true || auth["hmac_sha256"] != true {
 		t.Fatalf("auth=%#v", auth)
@@ -41,6 +44,14 @@ func TestPayloadDerivesOpenRTBEndpointAndContractFields(t *testing.T) {
 	}
 	if payload["no_bid"].(map[string]any)["http_status"] != http.StatusNoContent {
 		t.Fatalf("no_bid=%#v", payload["no_bid"])
+	}
+	certification := payload["certification"].(map[string]any)
+	if certification["required"] != true || len(certification["checks"].([]string)) == 0 {
+		t.Fatalf("certification=%#v", certification)
+	}
+	operatorEndpoints := payload["operator_endpoints"].(map[string]any)
+	if operatorEndpoints["ready"] != "https://agency-bidder.example.com/readyz" {
+		t.Fatalf("operator endpoints=%#v", operatorEndpoints)
 	}
 }
 

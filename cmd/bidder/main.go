@@ -2,6 +2,7 @@ package main
 
 import (
 	"context"
+	"encoding/json"
 	"flag"
 	"fmt"
 	"log"
@@ -18,14 +19,26 @@ import (
 
 func main() {
 	var register bool
+	var registrationPayload bool
 	var configPath string
 	flag.BoolVar(&register, "register", false, "register this bidder endpoint with ClearLedger and exit")
+	flag.BoolVar(&registrationPayload, "registration-payload", false, "print the ClearLedger approved-buyer registration payload and exit")
 	flag.StringVar(&configPath, "config", getenv("BIDDER_CONFIG", "config/campaigns.sample.json"), "campaign config path")
 	flag.Parse()
 
 	cfg, err := config.Load(configPath)
 	if err != nil {
 		log.Fatalf("config: %v", err)
+	}
+	if registrationPayload {
+		payload, err := registration.Payload(cfg)
+		if err != nil {
+			log.Fatalf("registration payload: %v", err)
+		}
+		enc := json.NewEncoder(os.Stdout)
+		enc.SetIndent("", "  ")
+		_ = enc.Encode(payload)
+		return
 	}
 	if register {
 		if err := registration.Register(context.Background(), cfg); err != nil {

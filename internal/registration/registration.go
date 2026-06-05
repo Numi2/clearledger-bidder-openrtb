@@ -54,6 +54,7 @@ func Payload(cfg config.Config) (map[string]any, error) {
 		"seat":     cfg.Seat,
 		"endpoint": endpoint,
 		"protocol": "openrtb-2.6-json",
+		"contract": "clearledger.openrtb.approved_buyer.v1",
 		"auth": map[string]any{
 			"bearer":      cfg.RequireAuth,
 			"hmac_sha256": cfg.RequireSignature,
@@ -67,6 +68,26 @@ func Payload(cfg config.Config) (map[string]any, error) {
 		},
 		"supported_media": supportedMedia(cfg),
 		"no_bid":          map[string]any{"http_status": http.StatusNoContent},
+		"certification": map[string]any{
+			"required": true,
+			"checks": []string{
+				"readyz",
+				"auth_signature",
+				"valid_video_bid",
+				"valid_audio_bid",
+				"valid_display_bid",
+				"valid_native_bid",
+				"clean_no_bid",
+				"malformed_rejected",
+				"proof_extensions",
+			},
+		},
+		"operator_endpoints": map[string]any{
+			"health":  strings.TrimSuffix(endpoint, "/openrtb") + "/healthz",
+			"ready":   strings.TrimSuffix(endpoint, "/openrtb") + "/readyz",
+			"metrics": strings.TrimSuffix(endpoint, "/openrtb") + "/metrics",
+			"state":   strings.TrimSuffix(endpoint, "/openrtb") + "/statez",
+		},
 	}, nil
 }
 

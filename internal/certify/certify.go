@@ -30,14 +30,48 @@ type Options struct {
 }
 
 type Report struct {
-	OK     bool    `json:"ok"`
-	Checks []Check `json:"checks"`
+	OK          bool          `json:"ok"`
+	Endpoint    string        `json:"endpoint"`
+	GeneratedAt string        `json:"generated_at"`
+	Contract    string        `json:"contract"`
+	BuyerID     string        `json:"buyer_id,omitempty"`
+	SeatID      string        `json:"seat_id,omitempty"`
+	TimeoutMS   int64         `json:"timeout_ms"`
+	Media       []MediaResult `json:"media"`
+	Checks      []Check       `json:"checks"`
+	Summary     Summary       `json:"summary"`
 }
 
 type Check struct {
-	Name   string `json:"name"`
-	OK     bool   `json:"ok"`
-	Detail string `json:"detail,omitempty"`
+	Name       string `json:"name"`
+	OK         bool   `json:"ok"`
+	Detail     string `json:"detail,omitempty"`
+	LatencyMS  int64  `json:"latency_ms,omitempty"`
+	StatusCode int    `json:"status_code,omitempty"`
+}
+
+type MediaResult struct {
+	MediaType    string `json:"media_type"`
+	Sample       string `json:"sample"`
+	HTTPStatus   int    `json:"http_status,omitempty"`
+	LatencyMS    int64  `json:"latency_ms,omitempty"`
+	Bid          bool   `json:"bid"`
+	ContractOK   bool   `json:"contract_ok"`
+	Error        string `json:"error,omitempty"`
+	ResponseSize int    `json:"response_size_bytes,omitempty"`
+}
+
+type Summary struct {
+	TotalChecks     int      `json:"total_checks"`
+	PassedChecks    int      `json:"passed_checks"`
+	FailedChecks    int      `json:"failed_checks"`
+	SupportedMedia  []string `json:"supported_media"`
+	AuthTested      bool     `json:"auth_tested"`
+	SignatureTested bool     `json:"signature_tested"`
+	Ready           bool     `json:"ready"`
+	NoBidOK         bool     `json:"no_bid_ok"`
+	MalformedOK     bool     `json:"malformed_ok"`
+	MaxLatencyMS    int64    `json:"max_latency_ms"`
 }
 
 func Run(ctx context.Context, options Options) (Report, error) {
@@ -49,56 +83,130 @@ func Run(ctx context.Context, options Options) (Report, error) {
 	}
 	samplePaths := resolvedSamplePaths(options)
 	client := &http.Client{Timeout: options.Timeout}
-	report := Report{OK: true}
-	add := func(name string, ok bool, detail string) {
-		report.Checks = append(report.Checks, Check{Name: name, OK: ok, Detail: detail})
-		if !ok {
+	report := Report{
+		OK:          true,
+		Endpoint:    options.Endpoint,
+		GeneratedAt: time.Now().UTC().Format(time.RFC3339Nano),
+		Contract:    "clearledger.openrtb.approved_buyer.v1",
+		BuyerID:     strings.TrimSpace(options.BuyerID),
+		SeatID:      strings.TrimSpace(options.SeatID),
+		TimeoutMS:   options.Timeout.Milliseconds(),
+	}
+	add := func(check Check) {
+		report.Checks = append(report.Checks, check)
+		if check.OK {
+			report.Summary.PassedChecks++
+		} else {
+			report.Summary.FailedChecks++
+		}
+		if check.LatencyMS > report.Summary.MaxLatencyMS {
+			report.Summary.MaxLatencyMS = check.LatencyMS
+		}
+		if check.Name == "readyz" {
+			report.Summary.Ready = check.OK
+		}
+		if check.Name == "clean_no_bid" {
+			report.Summary.NoBidOK = check.OK
+		}
+		if check.Name == "malformed_rejected" {
+			report.Summary.MalformedOK = check.OK
+		}
+		if !check.OK {
 			report.OK = false
 		}
 	}
+	addSimple := func(name string, ok bool, detail string) {
+		add(Check{Name: name, OK: ok, Detail: detail})
+	}
 
-	add("readyz", ready(ctx, client, options.Endpoint), "")
+	readyOK, readyLatency, readyStatus := ready(ctx, client, options.Endpoint)
+	add(Check{Name: "readyz", OK: readyOK, LatencyMS: readyLatency, StatusCode: readyStatus})
 	for _, samplePath := range samplePaths {
 		sample, err := os.ReadFile(samplePath)
 		label := sampleLabel(samplePath)
+		media := MediaResult{MediaType: label, Sample: samplePath}
 		if err != nil {
-			add(label+"_readable", false, err.Error())
+			addSimple(label+"_readable", false, err.Error())
+			media.Error = err.Error()
+			report.Media = append(report.Media, media)
 			continue
 		}
-		add(label+"_readable", true, "")
+		addSimple(label+"_readable", true, "")
 		req, err := openrtb.DecodeRequest(sample)
 		if err != nil {
-			add(label+"_request_valid", false, err.Error())
+			addSimple(label+"_request_valid", false, err.Error())
+			media.Error = err.Error()
+			report.Media = append(report.Media, media)
 			continue
 		}
-		add(label+"_request_valid", true, "")
+		addSimple(label+"_request_valid", true, "")
 
+		start := time.Now()
 		status, body, err := postOpenRTB(ctx, client, options, sample)
+		latency := time.Since(start).Milliseconds()
+		media.HTTPStatus = status
+		media.LatencyMS = latency
+		media.ResponseSize = len(body)
 		if err != nil {
-			add(label+"_valid_bid_http", false, err.Error())
+			add(Check{Name: label + "_valid_bid_http", OK: false, Detail: err.Error(), LatencyMS: latency, StatusCode: status})
+			media.Error = err.Error()
 		} else {
-			add(label+"_valid_bid_http", status == http.StatusOK, fmt.Sprintf("status=%d", status))
+			add(Check{Name: label + "_valid_bid_http", OK: status == http.StatusOK, Detail: fmt.Sprintf("status=%d", status), LatencyMS: latency, StatusCode: status})
 			var resp openrtb.BidResponse
 			if err := json.Unmarshal(body, &resp); err != nil {
-				add(label+"_valid_bid_json", false, err.Error())
+				addSimple(label+"_valid_bid_json", false, err.Error())
+				media.Error = err.Error()
 			} else {
-				add(label+"_valid_bid_json", true, "")
-				add(label+"_valid_bid_contract", openrtb.ValidateBidResponse(req, &resp) == nil, validationDetail(req, &resp))
+				media.Bid = true
+				addSimple(label+"_valid_bid_json", true, "")
+				contractDetail := validationDetail(req, &resp)
+				media.ContractOK = contractDetail == ""
+				if !media.ContractOK {
+					media.Error = contractDetail
+				} else {
+					report.Summary.SupportedMedia = appendUnique(report.Summary.SupportedMedia, label)
+				}
+				addSimple(label+"_valid_bid_contract", media.ContractOK, contractDetail)
 			}
 		}
+		report.Media = append(report.Media, media)
 	}
 
 	sample, err := os.ReadFile(samplePaths[0])
 	if err != nil {
+		finalizeSummary(&report, options)
 		return report, nil
 	}
 	noBidBody, _ := mutateFloor(sample, 999999)
+	start := time.Now()
 	status, _, err := postOpenRTB(ctx, client, options, noBidBody)
-	add("clean_no_bid", err == nil && status == http.StatusNoContent, statusDetail(status, err))
+	add(Check{Name: "clean_no_bid", OK: err == nil && status == http.StatusNoContent, Detail: statusDetail(status, err), LatencyMS: time.Since(start).Milliseconds(), StatusCode: status})
 
+	start = time.Now()
 	status, _, err = postOpenRTB(ctx, client, options, []byte(`{"id":"bad","site":{"domain":"example.com"},"imp":[]}`))
-	add("malformed_rejected", err == nil && status == http.StatusBadRequest, statusDetail(status, err))
+	add(Check{Name: "malformed_rejected", OK: err == nil && status == http.StatusBadRequest, Detail: statusDetail(status, err), LatencyMS: time.Since(start).Milliseconds(), StatusCode: status})
+	finalizeSummary(&report, options)
 	return report, nil
+}
+
+func finalizeSummary(report *Report, options Options) {
+	report.Summary.TotalChecks = len(report.Checks)
+	report.Summary.AuthTested = strings.TrimSpace(options.Token) != ""
+	report.Summary.SignatureTested = strings.TrimSpace(options.SigningSecret) != ""
+	report.Summary.SupportedMedia = append([]string(nil), report.Summary.SupportedMedia...)
+}
+
+func appendUnique(values []string, value string) []string {
+	value = strings.TrimSpace(value)
+	if value == "" {
+		return values
+	}
+	for _, existing := range values {
+		if existing == value {
+			return values
+		}
+	}
+	return append(values, value)
 }
 
 func resolvedSamplePaths(options Options) []string {
@@ -127,18 +235,19 @@ func sampleLabel(path string) string {
 	return strings.NewReplacer("-", "_", ".", "_").Replace(name)
 }
 
-func ready(ctx context.Context, client *http.Client, endpoint string) bool {
+func ready(ctx context.Context, client *http.Client, endpoint string) (bool, int64, int) {
 	readyURL, err := siblingURL(endpoint, "/readyz")
 	if err != nil {
-		return false
+		return false, 0, 0
 	}
 	req, _ := http.NewRequestWithContext(ctx, http.MethodGet, readyURL, nil)
+	start := time.Now()
 	resp, err := client.Do(req)
 	if err != nil {
-		return false
+		return false, time.Since(start).Milliseconds(), 0
 	}
 	defer resp.Body.Close()
-	return resp.StatusCode >= 200 && resp.StatusCode < 300
+	return resp.StatusCode >= 200 && resp.StatusCode < 300, time.Since(start).Milliseconds(), resp.StatusCode
 }
 
 func postOpenRTB(ctx context.Context, client *http.Client, options Options, body []byte) (int, []byte, error) {

@@ -20,5 +20,5 @@ jobs:
           cache: true
       - run: go test ./...
       - run: go run ./cmd/configcheck -config config/campaigns.sample.json
-      - run: go test ./internal/bidder -bench BenchmarkEngineBidVideoPMP -benchmem -benchtime=1000x
+      - run: make bench-guard
       - run: docker build -t clearledger-bidder-openrtb:ci .
