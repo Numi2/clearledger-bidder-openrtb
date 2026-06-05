@@ -96,6 +96,8 @@ The bidder detects the request version from `X-OpenRTB-Version` first, then body
 
 The decoder normalizes common compatibility fields into the local request model, including privacy values from `regs.ext`, `source.ext.schain`, `user.ext.consent`, `user.ext.eids`, floor aliases, native `version`/`ver`, and video/audio `placement`/`plcmt`. Response `ext.openrtb_compat` records detected version, outbound version, profile, normalized fields, and preserved extension keys.
 
+Readiness, state, certification, registration, and the ClearLedger lane harness all include the configured compatibility profile so operators can see which OpenRTB request versions are accepted and which response version is emitted.
+
 ## Bid Responses
 
 A valid bid response includes:
@@ -232,7 +234,7 @@ go run ./cmd/bidder -config config/campaigns.sample.json -register
 
 `BIDDER_PUBLIC_ENDPOINT` is the public base URL used for generated notice URLs such as `/events/imp`. `BIDDER_OPENRTB_ENDPOINT` is the exact endpoint ClearLedger should call for bid requests. If `BIDDER_OPENRTB_ENDPOINT` is omitted, registration derives it as `<BIDDER_PUBLIC_ENDPOINT>/openrtb`.
 
-Use `-registration-payload` to inspect or attach the approval payload without making a network call. The payload includes buyer identity, endpoint, OpenRTB contract, supported media, auth/signature requirements, certification checks, and safe operator endpoints. Use `-register` only when `CLEARLEDGER_REGISTER_URL` and `CLEARLEDGER_API_KEY` are configured for a real ClearLedger registration API.
+Use `-registration-payload` to inspect or attach the approval payload without making a network call. The payload includes buyer identity, endpoint, OpenRTB contract, supported media, OpenRTB compatibility settings, auth/signature requirements, certification checks, and safe operator endpoints. Use `-register` only when `CLEARLEDGER_REGISTER_URL` and `CLEARLEDGER_API_KEY` are configured for a real ClearLedger registration API.
 
 ## Endpoint Certification
 
@@ -243,6 +245,7 @@ go run ./cmd/certify \
   -endpoint https://agency-bidder.example.com/openrtb \
   -buyer-id agency_bidder_1 \
   -seat-id agency_seat_1 \
+  -openrtb-version 2.6 \
   -token "$BIDDER_OPENRTB_AUTH_TOKEN" \
   -signing-secret "$BIDDER_OPENRTB_SIGNING_SECRET"
 ```
@@ -275,7 +278,9 @@ export BIDDER_OPENRTB_REQUIRE_SIGNATURE=true
 make run
 
 # In another shell:
-make harness
+go run ./cmd/clearledger-harness \
+  -manifest samples/clearledger-runtime-manifest.local.json \
+  -openrtb-version 2.6
 ```
 
 ## Performance
