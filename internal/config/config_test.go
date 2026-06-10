@@ -72,6 +72,40 @@ func TestLoadOpenRTBEndpointEnvOverride(t *testing.T) {
 	}
 }
 
+func TestLoadOpenRTBCompatibilityEnvOverrides(t *testing.T) {
+	t.Setenv("BIDDER_OPENRTB_ACCEPTED_VERSIONS", "2.6,2.5,2.4")
+	t.Setenv("BIDDER_OPENRTB_OUTBOUND_VERSION", "2.5")
+	t.Setenv("BIDDER_OPENRTB_COMPAT_PROFILE", "legacy_exchange")
+	t.Setenv("BIDDER_OPENRTB_PRESERVE_PARTNER_EXT", "false")
+	cfg, err := Load("../../config/campaigns.sample.json")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if strings.Join(cfg.AcceptedOpenRTBVersions, ",") != "2.6,2.5,2.4" {
+		t.Fatalf("unexpected accepted versions: %#v", cfg.AcceptedOpenRTBVersions)
+	}
+	if cfg.OpenRTBOutboundVersion != "2.5" || cfg.OpenRTBCompatProfile != "legacy_exchange" || cfg.PreservePartnerExt {
+		t.Fatalf("unexpected OpenRTB compatibility config: %#v", cfg)
+	}
+	summary := cfg.Summary()
+	if strings.Join(summary.OpenRTBVersions, ",") != "2.6,2.5,2.4" || summary.OpenRTBOutboundVersion != "2.5" || summary.OpenRTBCompatProfile != "legacy_exchange" || summary.PreservePartnerExt {
+		t.Fatalf("unexpected summary OpenRTB fields: %#v", summary)
+	}
+}
+
+func TestLoadOpenRTBCompatibilityRejectsInvalidVersions(t *testing.T) {
+	t.Setenv("BIDDER_OPENRTB_ACCEPTED_VERSIONS", "3.0")
+	if _, err := Load("../../config/campaigns.sample.json"); err == nil || !strings.Contains(err.Error(), "accepted_openrtb_versions") {
+		t.Fatalf("expected accepted versions error, got %v", err)
+	}
+
+	t.Setenv("BIDDER_OPENRTB_ACCEPTED_VERSIONS", "2.6")
+	t.Setenv("BIDDER_OPENRTB_OUTBOUND_VERSION", "3.0")
+	if _, err := Load("../../config/campaigns.sample.json"); err == nil || !strings.Contains(err.Error(), "openrtb_outbound_version") {
+		t.Fatalf("expected outbound version error, got %v", err)
+	}
+}
+
 func TestValidateCampaignRejectsCreativeOutsideMediaTypes(t *testing.T) {
 	err := validateCampaign(Campaign{
 		ID:          "campaign",

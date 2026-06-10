@@ -64,7 +64,8 @@ func (s *Server) openrtb(w http.ResponseWriter, r *http.Request) {
 		writeJSON(w, http.StatusUnauthorized, map[string]any{"error": err.Error()})
 		return
 	}
-	req, err := openrtb.DecodeRequest(body)
+	compat := s.openRTBDecodeOptions(r)
+	req, err := openrtb.DecodeRequestWithOptions(body, compat)
 	if err != nil {
 		s.observe("malformed")
 		writeJSON(w, http.StatusBadRequest, map[string]any{"error": "malformed_openrtb", "detail": err.Error()})
@@ -78,10 +79,13 @@ func (s *Server) openrtb(w http.ResponseWriter, r *http.Request) {
 	decision := s.engine.Bid(r.Context(), req, start)
 	if decision.NoBid || decision.Response == nil {
 		s.observe("nobid_" + metricLabel(decision.Reason))
+		w.Header().Set("X-OpenRTB-Version", responseOpenRTBVersion(compat.OutboundVersion))
 		w.WriteHeader(http.StatusNoContent)
 		return
 	}
+	openrtb.ShapeResponse(req, decision.Response, compat)
 	s.observe("bid")
+	w.Header().Set("X-OpenRTB-Version", responseOpenRTBVersion(compat.OutboundVersion))
 	writeJSON(w, http.StatusOK, decision.Response)
 }
 
@@ -96,11 +100,12 @@ func (s *Server) buyerOpenRTB(w http.ResponseWriter, r *http.Request) {
 
 func (s *Server) health(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, map[string]any{
-		"ok":       true,
-		"service":  "clearledger-bidder-openrtb",
-		"buyer_id": s.cfg.BuyerID,
-		"seat":     s.cfg.Seat,
-		"endpoint": "/openrtb",
+		"ok":             true,
+		"service":        "clearledger-bidder-openrtb",
+		"buyer_id":       s.cfg.BuyerID,
+		"seat":           s.cfg.Seat,
+		"endpoint":       "/openrtb",
+		"openrtb_compat": s.openRTBCompatSummary(),
 	})
 }
 
@@ -132,6 +137,7 @@ func (s *Server) ready(w http.ResponseWriter, r *http.Request) {
 		"buyer_id":          s.cfg.BuyerID,
 		"seat":              s.cfg.Seat,
 		"endpoint":          "/openrtb",
+		"openrtb_compat":    s.openRTBCompatSummary(),
 		"auth": map[string]any{
 			"bearer_required":      s.cfg.RequireAuth,
 			"bearer_configured":    s.cfg.AuthToken != "",
@@ -182,6 +188,7 @@ func (s *Server) state(w http.ResponseWriter, r *http.Request) {
 		"buyer_id":          s.cfg.BuyerID,
 		"seat":              s.cfg.Seat,
 		"endpoint":          "/openrtb",
+		"openrtb_compat":    s.openRTBCompatSummary(),
 		"campaigns":         snapshots,
 		"enabled_campaigns": enabled,
 		"auth": map[string]any{
@@ -202,6 +209,32 @@ func (s *Server) event(w http.ResponseWriter, r *http.Request) {
 	}
 	s.observe("event_" + metricLabel(strings.TrimPrefix(r.URL.Path, "/events/")))
 	w.WriteHeader(http.StatusNoContent)
+}
+
+func (s *Server) openRTBDecodeOptions(r *http.Request) openrtb.DecodeOptions {
+	return openrtb.DecodeOptions{
+		VersionHeader:           r.Header.Get("X-OpenRTB-Version"),
+		AcceptedRequestVersions: s.cfg.AcceptedOpenRTBVersions,
+		OutboundVersion:         s.cfg.OpenRTBOutboundVersion,
+		CompatProfile:           s.cfg.OpenRTBCompatProfile,
+		PreservePartnerExt:      s.cfg.PreservePartnerExt,
+	}
+}
+
+func (s *Server) openRTBCompatSummary() map[string]any {
+	return map[string]any{
+		"accepted_request_versions": append([]string(nil), s.cfg.AcceptedOpenRTBVersions...),
+		"outbound_version":          responseOpenRTBVersion(s.cfg.OpenRTBOutboundVersion),
+		"compat_profile":            s.cfg.OpenRTBCompatProfile,
+		"preserve_partner_ext":      s.cfg.PreservePartnerExt,
+	}
+}
+
+func responseOpenRTBVersion(value string) string {
+	if version := openrtb.NormalizeOutboundVersion(value); version != "" {
+		return version
+	}
+	return "2.6"
 }
 
 func (s *Server) authorize(r *http.Request, body []byte, now time.Time) error {

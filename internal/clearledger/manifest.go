@@ -33,20 +33,28 @@ type Lane struct {
 }
 
 type ApprovedBuyer struct {
-	BuyerID          string   `json:"buyer_id"`
-	SeatID           string   `json:"seat_id"`
-	Name             string   `json:"name,omitempty"`
-	Status           string   `json:"status"`
-	Endpoint         string   `json:"openrtb_endpoint"`
-	BidProtocol      string   `json:"bid_protocol,omitempty"`
-	TimeoutMS        int      `json:"timeout_ms,omitempty"`
-	QPSLimit         float64  `json:"qps_limit,omitempty"`
-	AllowedFormats   []string `json:"allowed_formats,omitempty"`
-	AuthHeaderName   string   `json:"auth_header_name,omitempty"`
-	AuthTokenEnv     string   `json:"auth_token_env,omitempty"`
-	AuthToken        string   `json:"auth_token,omitempty"`
-	SigningSecretEnv string   `json:"signing_secret_env,omitempty"`
-	SigningSecret    string   `json:"signing_secret,omitempty"`
+	BuyerID          string        `json:"buyer_id"`
+	SeatID           string        `json:"seat_id"`
+	Name             string        `json:"name,omitempty"`
+	Status           string        `json:"status"`
+	Endpoint         string        `json:"openrtb_endpoint"`
+	BidProtocol      string        `json:"bid_protocol,omitempty"`
+	TimeoutMS        int           `json:"timeout_ms,omitempty"`
+	QPSLimit         float64       `json:"qps_limit,omitempty"`
+	AllowedFormats   []string      `json:"allowed_formats,omitempty"`
+	AuthHeaderName   string        `json:"auth_header_name,omitempty"`
+	AuthTokenEnv     string        `json:"auth_token_env,omitempty"`
+	AuthToken        string        `json:"auth_token,omitempty"`
+	SigningSecretEnv string        `json:"signing_secret_env,omitempty"`
+	SigningSecret    string        `json:"signing_secret,omitempty"`
+	OpenRTBCompat    OpenRTBCompat `json:"openrtb_compat,omitempty"`
+}
+
+type OpenRTBCompat struct {
+	AcceptedRequestVersions []string `json:"accepted_request_versions,omitempty"`
+	OutboundVersion         string   `json:"outbound_version,omitempty"`
+	PartnerProfile          string   `json:"partner_profile,omitempty"`
+	PreservePartnerExt      bool     `json:"preserve_partner_ext,omitempty"`
 }
 
 func LoadManifest(path string) (Manifest, error) {

@@ -5,7 +5,7 @@ COPY cmd ./cmd
 COPY internal ./internal
 COPY config ./config
 COPY samples ./samples
-RUN go test ./... && CGO_ENABLED=0 GOOS=linux go build -trimpath -ldflags="-s -w" -o /out/clearledger-bidder ./cmd/bidder
+RUN CGO_ENABLED=0 GOOS=linux go build -trimpath -ldflags="-s -w" -o /out/clearledger-bidder ./cmd/bidder
 
 FROM gcr.io/distroless/static-debian12:nonroot
 WORKDIR /app

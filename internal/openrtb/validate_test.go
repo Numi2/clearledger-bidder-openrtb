@@ -3,6 +3,7 @@ package openrtb
 import (
 	"encoding/json"
 	"os"
+	"slices"
 	"testing"
 )
 
@@ -83,6 +84,75 @@ func TestDecodeRequestAllowsExtensions(t *testing.T) {
 	}
 	if _, err := DecodeRequest(body); err != nil {
 		t.Fatal(err)
+	}
+}
+
+func TestDecodeRequestWithOptionsNormalizesOpenRTB2xCompatibility(t *testing.T) {
+	body := []byte(`{
+		"id":"legacy-1",
+		"ver":"2.4",
+		"site":{"domain":"example.com"},
+		"regs":{"ext":{"gpp":"DBABLA~BAAAAAA","us_privacy":"1YNN"}},
+		"source":{"ext":{"schain":{"complete":1,"nodes":[{"asi":"exchange.example","sid":"seller-1","hp":1}]}}},
+		"user":{"ext":{"consent":"COabc","eids":[{"source":"uidapi.com","uids":[{"id":"uid-1"}]}]}},
+		"imp":[{"id":"1","video":{"mimes":["video/mp4"],"placement":1},"ext":{"floor":2.5,"floorcur":"USD","partner_slot":"slot-1"}}],
+		"ext":{"partner_trace":"trace-1"}
+	}`)
+	req, err := DecodeRequestWithOptions(body, DecodeOptions{
+		VersionHeader:           "2.4",
+		AcceptedRequestVersions: []string{"2.6", "2.5", "2.4"},
+		OutboundVersion:         "2.5",
+		CompatProfile:           "legacy_exchange",
+		PreservePartnerExt:      true,
+	})
+	if err != nil {
+		t.Fatalf("expected legacy compatible request to decode: %v", err)
+	}
+	if req.Compat == nil || req.Compat.DetectedVersion != "2.4" || req.Compat.OutboundVersion != "2.5" {
+		t.Fatalf("unexpected compat proof: %#v", req.Compat)
+	}
+	for _, field := range []string{"regs.gpp", "regs.us_privacy", "source.schain", "user.consent", "user.eids", "imp.bidfloor", "imp.bidfloorcur", "imp.video.plcmt"} {
+		if !slices.Contains(req.Compat.NormalizedFields, field) {
+			t.Fatalf("expected normalized field %q in %#v", field, req.Compat.NormalizedFields)
+		}
+	}
+	if req.User == nil || req.User.Consent != "COabc" || len(req.User.EIDs) != 1 {
+		t.Fatalf("expected consent/eids normalized, got %#v", req.User)
+	}
+	if req.Regs["gpp"] == "" || req.Regs["us_privacy"] != "1YNN" || req.Source["schain"] == nil {
+		t.Fatalf("expected privacy/schain normalized regs=%#v source=%#v", req.Regs, req.Source)
+	}
+	if req.Imp[0].BidFloor != 2.5 || req.Imp[0].BidFloorCur != "USD" || req.Imp[0].Video.Plcmt != 1 {
+		t.Fatalf("expected imp aliases normalized, got %#v", req.Imp[0])
+	}
+	if !slices.Contains(req.Compat.PreservedExtKeys, "request.ext.partner_trace") || !slices.Contains(req.Compat.PreservedExtKeys, "imp.ext.partner_slot") {
+		t.Fatalf("expected ext keys preserved in proof, got %#v", req.Compat.PreservedExtKeys)
+	}
+}
+
+func TestDecodeRequestRejectsOlderOpenRTBWithoutOptIn(t *testing.T) {
+	body := []byte(`{"id":"legacy-1","ver":"2.4","site":{"domain":"example.com"},"imp":[{"id":"1","banner":{"w":300,"h":250}}]}`)
+	if _, err := DecodeRequest(body); err == nil {
+		t.Fatal("expected OpenRTB 2.4 to require explicit opt-in")
+	}
+}
+
+func TestDecodeRequestCanOmitPreservedExtProof(t *testing.T) {
+	body := []byte(`{"id":"a","site":{"domain":"example.com"},"imp":[{"id":"1","banner":{"w":300,"h":250},"ext":{"partner_slot":"slot-1"}}],"ext":{"partner_trace":"trace-1"}}`)
+	req, err := DecodeRequestWithOptions(body, DecodeOptions{
+		AcceptedRequestVersions: []string{"2.6"},
+		OutboundVersion:         "2.6",
+		CompatProfile:           "openrtb_json",
+		PreservePartnerExt:      false,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if req.Compat == nil {
+		t.Fatal("expected compatibility proof")
+	}
+	if len(req.Compat.PreservedExtKeys) != 0 {
+		t.Fatalf("expected preserved ext proof omitted, got %#v", req.Compat.PreservedExtKeys)
 	}
 }
 

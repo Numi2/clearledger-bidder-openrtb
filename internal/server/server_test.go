@@ -65,6 +65,44 @@ func TestBidVideoPMP(t *testing.T) {
 	}
 }
 
+func TestOpenRTBCompatibilityHeaderAndResponseProof(t *testing.T) {
+	cfg := sampleConfig(t)
+	cfg.AcceptedOpenRTBVersions = []string{"2.6", "2.5", "2.4"}
+	cfg.OpenRTBOutboundVersion = "2.5"
+	cfg.OpenRTBCompatProfile = "legacy_exchange"
+	h := New(cfg, bidder.NewEngine(cfg))
+	body := sampleVideoRequestMap(t)
+	body["ver"] = "2.4"
+	ext, _ := body["ext"].(map[string]any)
+	if ext == nil {
+		ext = map[string]any{}
+		body["ext"] = ext
+	}
+	ext["partner_trace"] = "trace-1"
+	payload := mustJSON(t, body)
+	req := httptest.NewRequest(http.MethodPost, "/openrtb", bytes.NewReader(payload))
+	req.Header.Set("X-OpenRTB-Version", "2.4")
+	rr := httptest.NewRecorder()
+	h.ServeHTTP(rr, req)
+	if rr.Code != http.StatusOK {
+		t.Fatalf("status=%d body=%s", rr.Code, rr.Body.String())
+	}
+	if got := rr.Header().Get("X-OpenRTB-Version"); got != "2.5" {
+		t.Fatalf("expected response OpenRTB version 2.5, got %q", got)
+	}
+	var resp openrtb.BidResponse
+	if err := json.Unmarshal(rr.Body.Bytes(), &resp); err != nil {
+		t.Fatal(err)
+	}
+	compat, ok := resp.Ext["openrtb_compat"].(map[string]any)
+	if !ok {
+		t.Fatalf("missing response openrtb_compat proof: %#v", resp.Ext)
+	}
+	if compat["openrtb_detected_version"] != "2.4" || compat["openrtb_outbound_version"] != "2.5" || compat["compat_profile"] != "legacy_exchange" {
+		t.Fatalf("unexpected compatibility proof: %#v", compat)
+	}
+}
+
 func TestNoBidFloorAndDeal(t *testing.T) {
 	h := testHandler(t)
 	req := sampleVideoRequestMap(t)

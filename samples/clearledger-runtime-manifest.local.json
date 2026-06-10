@@ -28,10 +28,16 @@
           "name": "Agency Bidder 1",
           "status": "approved",
           "openrtb_endpoint": "http://127.0.0.1:8080/openrtb",
-          "bid_protocol": "openrtb_json",
+          "bid_protocol": "openrtb-2.x-json",
           "timeout_ms": 250,
           "qps_limit": 100,
           "allowed_formats": ["video"],
+          "openrtb_compat": {
+            "accepted_request_versions": ["2.6", "2.5"],
+            "outbound_version": "2.6",
+            "partner_profile": "openrtb_json",
+            "preserve_partner_ext": true
+          },
           "auth_token_env": "BIDDER_OPENRTB_AUTH_TOKEN",
           "signing_secret_env": "BIDDER_OPENRTB_SIGNING_SECRET"
         }

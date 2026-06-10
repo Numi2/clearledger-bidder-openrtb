@@ -27,6 +27,7 @@ type HarnessOptions struct {
 	EndpointOverride string
 	AuthToken        string
 	SigningSecret    string
+	OpenRTBVersion   string
 	Timeout          time.Duration
 }
 
@@ -319,8 +320,7 @@ func enforceLaneRequest(lane Lane, req openrtb.BidRequest) string {
 }
 
 func enforceBuyerRoute(lane Lane, buyer ApprovedBuyer, req openrtb.BidRequest) string {
-	protocol := strings.TrimSpace(buyer.BidProtocol)
-	if protocol != "" && !strings.EqualFold(protocol, "openrtb_json") && !strings.EqualFold(protocol, "openrtb") {
+	if !supportedBidProtocol(buyer.BidProtocol) {
 		return "unsupported_bid_protocol"
 	}
 	if len(req.Imp) == 0 {
@@ -349,7 +349,7 @@ func callBuyer(ctx context.Context, client *http.Client, buyer ApprovedBuyer, op
 	}
 	httpReq.Header.Set("Content-Type", "application/json")
 	httpReq.Header.Set("Accept", "application/json")
-	httpReq.Header.Set("X-OpenRTB-Version", "2.6")
+	httpReq.Header.Set("X-OpenRTB-Version", openRTBVersionForBuyer(buyer, options))
 	httpReq.Header.Set("X-ClearLedger-Request-ID", bidReq.ID)
 	httpReq.Header.Set("X-ClearLedger-Auction-ID", bidReq.ID)
 	httpReq.Header.Set("X-ClearLedger-Buyer-ID", buyer.BuyerID)
@@ -373,6 +373,31 @@ func callBuyer(ctx context.Context, client *http.Client, buyer ApprovedBuyer, op
 		}
 	}
 	return bidResp, resp.StatusCode, latency, nil
+}
+
+func openRTBVersionForBuyer(buyer ApprovedBuyer, options HarnessOptions) string {
+	if strings.TrimSpace(options.OpenRTBVersion) != "" {
+		if version := openrtb.NormalizeOutboundVersion(options.OpenRTBVersion); version != "" {
+			return version
+		}
+	}
+	if strings.TrimSpace(buyer.OpenRTBCompat.OutboundVersion) != "" {
+		if version := openrtb.NormalizeOutboundVersion(buyer.OpenRTBCompat.OutboundVersion); version != "" {
+			return version
+		}
+	}
+	return "2.6"
+}
+
+func supportedBidProtocol(protocol string) bool {
+	value := strings.ToLower(strings.TrimSpace(protocol))
+	value = strings.ReplaceAll(value, "-", "_")
+	switch value {
+	case "", "openrtb", "openrtb_json", "openrtb_2.x_json", "openrtb_2_x_json", "openrtb_2.6_json", "openrtb_2_6_json":
+		return true
+	default:
+		return false
+	}
 }
 
 func endpointForBuyer(buyer ApprovedBuyer, options HarnessOptions) string {

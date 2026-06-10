@@ -53,7 +53,13 @@ func Payload(cfg config.Config) (map[string]any, error) {
 		"buyer_id": cfg.BuyerID,
 		"seat":     cfg.Seat,
 		"endpoint": endpoint,
-		"protocol": "openrtb-2.6-json",
+		"protocol": "openrtb-2.x-json",
+		"openrtb_compat": map[string]any{
+			"accepted_request_versions": cfg.AcceptedOpenRTBVersions,
+			"outbound_version":          cfg.OpenRTBOutboundVersion,
+			"compat_profile":            cfg.OpenRTBCompatProfile,
+			"preserve_partner_ext":      cfg.PreservePartnerExt,
+		},
 		"contract": "clearledger.openrtb.approved_buyer.v1",
 		"auth": map[string]any{
 			"bearer":      cfg.RequireAuth,

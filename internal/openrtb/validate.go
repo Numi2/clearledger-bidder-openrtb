@@ -11,7 +11,15 @@ import (
 var ErrMalformed = errors.New("malformed_openrtb")
 
 func DecodeRequest(body []byte) (*BidRequest, error) {
+	return DecodeRequestWithOptions(body, DefaultDecodeOptions())
+}
+
+func DecodeRequestWithOptions(body []byte, options DecodeOptions) (*BidRequest, error) {
 	var req BidRequest
+	var raw map[string]any
+	if err := json.Unmarshal(body, &raw); err != nil {
+		return nil, fmt.Errorf("%w: %v", ErrMalformed, err)
+	}
 	dec := json.NewDecoder(bytes.NewReader(body))
 	if err := dec.Decode(&req); err != nil {
 		return nil, fmt.Errorf("%w: %v", ErrMalformed, err)
@@ -21,6 +29,9 @@ func DecodeRequest(body []byte) (*BidRequest, error) {
 		return nil, fmt.Errorf("%w: trailing JSON data", ErrMalformed)
 	}
 	req.Raw = append(req.Raw[:0], body...)
+	if err := applyCompatibility(&req, raw, options); err != nil {
+		return nil, err
+	}
 	if err := ValidateRequest(&req); err != nil {
 		return nil, err
 	}

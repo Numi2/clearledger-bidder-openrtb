@@ -21,6 +21,7 @@ func main() {
 	flag.StringVar(&options.SigningSecret, "signing-secret", os.Getenv("BIDDER_OPENRTB_SIGNING_SECRET"), "HMAC signing secret")
 	flag.StringVar(&options.BuyerID, "buyer-id", os.Getenv("BIDDER_BUYER_ID"), "ClearLedger buyer id header to certify")
 	flag.StringVar(&options.SeatID, "seat-id", os.Getenv("BIDDER_SEAT"), "ClearLedger seat id header to certify")
+	flag.StringVar(&options.OpenRTBVersion, "openrtb-version", getenv("BIDDER_OPENRTB_OUTBOUND_VERSION", "2.6"), "X-OpenRTB-Version header for certification requests")
 	flag.StringVar(&samples, "samples", "", "comma-separated OpenRTB sample request paths")
 	flag.StringVar(&options.SamplePath, "sample", "", "single OpenRTB request path")
 	flag.IntVar(&timeoutMS, "timeout-ms", 2000, "HTTP timeout per certification request")
@@ -45,6 +46,13 @@ func main() {
 	if !report.OK {
 		os.Exit(1)
 	}
+}
+
+func getenv(key, fallback string) string {
+	if value := strings.TrimSpace(os.Getenv(key)); value != "" {
+		return value
+	}
+	return fallback
 }
 
 func defaultEndpoint() string {

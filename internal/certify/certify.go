@@ -19,27 +19,30 @@ import (
 )
 
 type Options struct {
-	Endpoint      string
-	Token         string
-	SigningSecret string
-	BuyerID       string
-	SeatID        string
-	SamplePath    string
-	SamplePaths   []string
-	Timeout       time.Duration
+	Endpoint       string
+	Token          string
+	SigningSecret  string
+	BuyerID        string
+	SeatID         string
+	SamplePath     string
+	SamplePaths    []string
+	OpenRTBVersion string
+	Timeout        time.Duration
 }
 
 type Report struct {
-	OK          bool          `json:"ok"`
-	Endpoint    string        `json:"endpoint"`
-	GeneratedAt string        `json:"generated_at"`
-	Contract    string        `json:"contract"`
-	BuyerID     string        `json:"buyer_id,omitempty"`
-	SeatID      string        `json:"seat_id,omitempty"`
-	TimeoutMS   int64         `json:"timeout_ms"`
-	Media       []MediaResult `json:"media"`
-	Checks      []Check       `json:"checks"`
-	Summary     Summary       `json:"summary"`
+	OK             bool           `json:"ok"`
+	Endpoint       string         `json:"endpoint"`
+	GeneratedAt    string         `json:"generated_at"`
+	Contract       string         `json:"contract"`
+	BuyerID        string         `json:"buyer_id,omitempty"`
+	SeatID         string         `json:"seat_id,omitempty"`
+	OpenRTBVersion string         `json:"openrtb_version"`
+	OpenRTBCompat  map[string]any `json:"openrtb_compat,omitempty"`
+	TimeoutMS      int64          `json:"timeout_ms"`
+	Media          []MediaResult  `json:"media"`
+	Checks         []Check        `json:"checks"`
+	Summary        Summary        `json:"summary"`
 }
 
 type Check struct {
@@ -84,13 +87,14 @@ func Run(ctx context.Context, options Options) (Report, error) {
 	samplePaths := resolvedSamplePaths(options)
 	client := &http.Client{Timeout: options.Timeout}
 	report := Report{
-		OK:          true,
-		Endpoint:    options.Endpoint,
-		GeneratedAt: time.Now().UTC().Format(time.RFC3339Nano),
-		Contract:    "clearledger.openrtb.approved_buyer.v1",
-		BuyerID:     strings.TrimSpace(options.BuyerID),
-		SeatID:      strings.TrimSpace(options.SeatID),
-		TimeoutMS:   options.Timeout.Milliseconds(),
+		OK:             true,
+		Endpoint:       options.Endpoint,
+		GeneratedAt:    time.Now().UTC().Format(time.RFC3339Nano),
+		Contract:       "clearledger.openrtb.approved_buyer.v1",
+		BuyerID:        strings.TrimSpace(options.BuyerID),
+		SeatID:         strings.TrimSpace(options.SeatID),
+		OpenRTBVersion: openRTBVersion(options.OpenRTBVersion),
+		TimeoutMS:      options.Timeout.Milliseconds(),
 	}
 	add := func(check Check) {
 		report.Checks = append(report.Checks, check)
@@ -119,7 +123,10 @@ func Run(ctx context.Context, options Options) (Report, error) {
 		add(Check{Name: name, OK: ok, Detail: detail})
 	}
 
-	readyOK, readyLatency, readyStatus := ready(ctx, client, options.Endpoint)
+	readyOK, readyLatency, readyStatus, readyPayload := ready(ctx, client, options.Endpoint)
+	if compat, ok := readyPayload["openrtb_compat"].(map[string]any); ok {
+		report.OpenRTBCompat = compat
+	}
 	add(Check{Name: "readyz", OK: readyOK, LatencyMS: readyLatency, StatusCode: readyStatus})
 	for _, samplePath := range samplePaths {
 		sample, err := os.ReadFile(samplePath)
@@ -235,19 +242,22 @@ func sampleLabel(path string) string {
 	return strings.NewReplacer("-", "_", ".", "_").Replace(name)
 }
 
-func ready(ctx context.Context, client *http.Client, endpoint string) (bool, int64, int) {
+func ready(ctx context.Context, client *http.Client, endpoint string) (bool, int64, int, map[string]any) {
 	readyURL, err := siblingURL(endpoint, "/readyz")
 	if err != nil {
-		return false, 0, 0
+		return false, 0, 0, nil
 	}
 	req, _ := http.NewRequestWithContext(ctx, http.MethodGet, readyURL, nil)
 	start := time.Now()
 	resp, err := client.Do(req)
 	if err != nil {
-		return false, time.Since(start).Milliseconds(), 0
+		return false, time.Since(start).Milliseconds(), 0, nil
 	}
 	defer resp.Body.Close()
-	return resp.StatusCode >= 200 && resp.StatusCode < 300, time.Since(start).Milliseconds(), resp.StatusCode
+	body, _ := io.ReadAll(io.LimitReader(resp.Body, 1<<20))
+	var payload map[string]any
+	_ = json.Unmarshal(body, &payload)
+	return resp.StatusCode >= 200 && resp.StatusCode < 300, time.Since(start).Milliseconds(), resp.StatusCode, payload
 }
 
 func postOpenRTB(ctx context.Context, client *http.Client, options Options, body []byte) (int, []byte, error) {
@@ -257,7 +267,7 @@ func postOpenRTB(ctx context.Context, client *http.Client, options Options, body
 	}
 	req.Header.Set("Content-Type", "application/json")
 	req.Header.Set("Accept", "application/json")
-	req.Header.Set("X-OpenRTB-Version", "2.6")
+	req.Header.Set("X-OpenRTB-Version", openRTBVersion(options.OpenRTBVersion))
 	if strings.TrimSpace(options.BuyerID) != "" {
 		req.Header.Set("X-ClearLedger-Buyer-ID", strings.TrimSpace(options.BuyerID))
 	}
@@ -287,6 +297,14 @@ func postOpenRTB(ctx context.Context, client *http.Client, options Options, body
 	defer resp.Body.Close()
 	respBody, _ := io.ReadAll(io.LimitReader(resp.Body, 1<<20))
 	return resp.StatusCode, respBody, nil
+}
+
+func openRTBVersion(value string) string {
+	value = strings.TrimSpace(value)
+	if value == "" {
+		return "2.6"
+	}
+	return value
 }
 
 func mutateFloor(body []byte, floor float64) ([]byte, error) {

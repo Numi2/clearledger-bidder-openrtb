@@ -9,14 +9,14 @@ The bidder is intentionally narrow: it decides whether to bid on a signed OpenRT
 1. Supply enters ClearLedger from a publisher, app, SDK, ad server, or SSP path.
 2. ClearLedger reads the active private-auction runtime manifest from Redis.
 3. ClearLedger resolves the lane, package, placement, floor, Deal ID, media type, approved buyers, QPS/timeout controls, privacy rules, and creative requirements.
-4. ClearLedger builds an OpenRTB 2.6-compatible request and signs the fanout request to the approved buyer endpoint.
+4. ClearLedger builds an OpenRTB 2.x-compatible JSON request and signs the fanout request to the approved buyer endpoint.
 5. The bidder validates the request, applies local campaign and creative rules, and returns either `204 No Content` or a valid OpenRTB bid response before `tmax`.
 6. ClearLedger validates all bid responses, enforces the approved buyer route, selects the winner, and returns VAST/adm to the supply path.
 7. Delivery tracking, evidence archive, billing proof, settlement proof, publisher net, ClearLedger fee, payout workflow, and final receipt generation remain outside the bidder.
 
 ## Buyer Endpoint
 
-ClearLedger registers the bidder as an approved buyer endpoint and calls it with OpenRTB 2.6 JSON:
+ClearLedger registers the bidder as an approved buyer endpoint and calls it with OpenRTB 2.x JSON. The default outbound version is OpenRTB 2.6 unless the active runtime manifest or local operator config selects another supported 2.x version:
 
 ```http
 POST https://agency-bidder.example.com/openrtb

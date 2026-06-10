@@ -54,7 +54,9 @@ func TestRunReportsIdentityMismatchFromEndpoint(t *testing.T) {
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		switch r.URL.Path {
 		case "/readyz":
+			w.Header().Set("Content-Type", "application/json")
 			w.WriteHeader(http.StatusOK)
+			_, _ = w.Write([]byte(`{"ok":true,"openrtb_compat":{"accepted_request_versions":["2.6","2.5"],"outbound_version":"2.6","compat_profile":"openrtb_json","preserve_partner_ext":true}}`))
 		case "/openrtb":
 			if r.Header.Get("X-ClearLedger-Buyer-ID") != "expected_buyer" {
 				w.WriteHeader(http.StatusBadRequest)
@@ -83,6 +85,9 @@ func TestRunReportsIdentityMismatchFromEndpoint(t *testing.T) {
 	}
 	if !hasCheckDetail(report, "display_valid_bid_http", "status=400") {
 		t.Fatalf("expected status detail in report: %#v", report.Checks)
+	}
+	if report.OpenRTBVersion != "2.6" || report.OpenRTBCompat["outbound_version"] != "2.6" {
+		t.Fatalf("expected OpenRTB compatibility in report: %#v version=%q", report.OpenRTBCompat, report.OpenRTBVersion)
 	}
 }
 

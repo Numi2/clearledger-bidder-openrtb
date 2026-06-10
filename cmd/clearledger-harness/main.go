@@ -6,6 +6,7 @@ import (
 	"flag"
 	"fmt"
 	"os"
+	"strings"
 	"time"
 
 	"github.com/Numi2/clearledger-bidder-openrtb/internal/clearledger"
@@ -21,6 +22,7 @@ func main() {
 	flag.StringVar(&options.EndpointOverride, "endpoint", "", "override buyer endpoint")
 	flag.StringVar(&options.AuthToken, "token", os.Getenv("BIDDER_OPENRTB_AUTH_TOKEN"), "buyer auth token")
 	flag.StringVar(&options.SigningSecret, "signing-secret", os.Getenv("BIDDER_OPENRTB_SIGNING_SECRET"), "buyer signing secret")
+	flag.StringVar(&options.OpenRTBVersion, "openrtb-version", getenv("BIDDER_OPENRTB_OUTBOUND_VERSION", ""), "override X-OpenRTB-Version header")
 	flag.IntVar(&timeoutMS, "timeout-ms", 2000, "HTTP timeout")
 	flag.Parse()
 	options.Timeout = time.Duration(timeoutMS) * time.Millisecond
@@ -36,4 +38,11 @@ func main() {
 	if !report.OK {
 		os.Exit(1)
 	}
+}
+
+func getenv(key, fallback string) string {
+	if value := strings.TrimSpace(os.Getenv(key)); value != "" {
+		return value
+	}
+	return fallback
 }

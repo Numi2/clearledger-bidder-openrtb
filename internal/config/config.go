@@ -8,30 +8,36 @@ import (
 	"strconv"
 	"strings"
 	"time"
+
+	"github.com/Numi2/clearledger-bidder-openrtb/internal/openrtb"
 )
 
 type Config struct {
-	Port                   string     `json:"-"`
-	PublicEndpoint         string     `json:"public_endpoint"`
-	OpenRTBEndpoint        string     `json:"openrtb_endpoint,omitempty"`
-	BuyerID                string     `json:"buyer_id"`
-	Seat                   string     `json:"seat"`
-	Currency               string     `json:"currency"`
-	AuthToken              string     `json:"-"`
-	SigningSecret          string     `json:"-"`
-	RequireAuth            bool       `json:"-"`
-	RequireSignature       bool       `json:"-"`
-	SignatureSkew          int        `json:"-"`
-	ReadHeaderTimeoutMS    int        `json:"-"`
-	ReadTimeoutMS          int        `json:"-"`
-	WriteTimeoutMS         int        `json:"-"`
-	IdleTimeoutMS          int        `json:"-"`
-	ShutdownTimeoutMS      int        `json:"-"`
-	MaxRequestBodyBytes    int        `json:"-"`
-	MaxHeaderBytes         int        `json:"-"`
-	ClearLedgerRegisterURL string     `json:"-"`
-	ClearLedgerAPIKey      string     `json:"-"`
-	Campaigns              []Campaign `json:"campaigns"`
+	Port                    string     `json:"-"`
+	PublicEndpoint          string     `json:"public_endpoint"`
+	OpenRTBEndpoint         string     `json:"openrtb_endpoint,omitempty"`
+	BuyerID                 string     `json:"buyer_id"`
+	Seat                    string     `json:"seat"`
+	Currency                string     `json:"currency"`
+	AuthToken               string     `json:"-"`
+	SigningSecret           string     `json:"-"`
+	RequireAuth             bool       `json:"-"`
+	RequireSignature        bool       `json:"-"`
+	SignatureSkew           int        `json:"-"`
+	ReadHeaderTimeoutMS     int        `json:"-"`
+	ReadTimeoutMS           int        `json:"-"`
+	WriteTimeoutMS          int        `json:"-"`
+	IdleTimeoutMS           int        `json:"-"`
+	ShutdownTimeoutMS       int        `json:"-"`
+	MaxRequestBodyBytes     int        `json:"-"`
+	MaxHeaderBytes          int        `json:"-"`
+	ClearLedgerRegisterURL  string     `json:"-"`
+	ClearLedgerAPIKey       string     `json:"-"`
+	AcceptedOpenRTBVersions []string   `json:"accepted_openrtb_versions,omitempty"`
+	OpenRTBOutboundVersion  string     `json:"openrtb_outbound_version,omitempty"`
+	OpenRTBCompatProfile    string     `json:"openrtb_compat_profile,omitempty"`
+	PreservePartnerExt      bool       `json:"preserve_partner_ext,omitempty"`
+	Campaigns               []Campaign `json:"campaigns"`
 }
 
 type Campaign struct {
@@ -70,25 +76,30 @@ type Creative struct {
 }
 
 type Summary struct {
-	OK                bool     `json:"ok"`
-	BuyerID           string   `json:"buyer_id"`
-	Seat              string   `json:"seat"`
-	Currency          string   `json:"currency"`
-	Campaigns         int      `json:"campaigns"`
-	EnabledCampaigns  int      `json:"enabled_campaigns"`
-	ApprovedCreatives int      `json:"approved_creatives"`
-	MediaTypes        []string `json:"media_types"`
-	DealIDs           int      `json:"deal_ids"`
-	Placements        int      `json:"placements"`
-	AuthRequired      bool     `json:"auth_required"`
-	SignatureRequired bool     `json:"signature_required"`
-	PublicEndpointSet bool     `json:"public_endpoint_set"`
-	OpenRTBEndpoint   string   `json:"openrtb_endpoint,omitempty"`
-	ReadinessNotes    []string `json:"readiness_notes,omitempty"`
+	OK                     bool     `json:"ok"`
+	BuyerID                string   `json:"buyer_id"`
+	Seat                   string   `json:"seat"`
+	Currency               string   `json:"currency"`
+	Campaigns              int      `json:"campaigns"`
+	EnabledCampaigns       int      `json:"enabled_campaigns"`
+	ApprovedCreatives      int      `json:"approved_creatives"`
+	MediaTypes             []string `json:"media_types"`
+	DealIDs                int      `json:"deal_ids"`
+	Placements             int      `json:"placements"`
+	AuthRequired           bool     `json:"auth_required"`
+	SignatureRequired      bool     `json:"signature_required"`
+	PublicEndpointSet      bool     `json:"public_endpoint_set"`
+	OpenRTBEndpoint        string   `json:"openrtb_endpoint,omitempty"`
+	OpenRTBVersions        []string `json:"openrtb_versions,omitempty"`
+	OpenRTBOutboundVersion string   `json:"openrtb_outbound_version,omitempty"`
+	OpenRTBCompatProfile   string   `json:"openrtb_compat_profile,omitempty"`
+	PreservePartnerExt     bool     `json:"preserve_partner_ext"`
+	ReadinessNotes         []string `json:"readiness_notes,omitempty"`
 }
 
 func Load(path string) (Config, error) {
 	var cfg Config
+	preservePartnerExtSet := false
 	if path != "" {
 		body, err := os.ReadFile(path)
 		if err != nil {
@@ -97,6 +108,11 @@ func Load(path string) (Config, error) {
 		if err := json.Unmarshal(body, &cfg); err != nil {
 			return cfg, err
 		}
+		var raw map[string]json.RawMessage
+		if err := json.Unmarshal(body, &raw); err != nil {
+			return cfg, err
+		}
+		_, preservePartnerExtSet = raw["preserve_partner_ext"]
 	}
 	cfg.Port = getenv("PORT", "8080")
 	cfg.PublicEndpoint = getenv("BIDDER_PUBLIC_ENDPOINT", cfg.PublicEndpoint)
@@ -118,6 +134,26 @@ func Load(path string) (Config, error) {
 	cfg.MaxHeaderBytes = positiveIntEnv("BIDDER_MAX_HEADER_BYTES", 16<<10)
 	cfg.ClearLedgerRegisterURL = os.Getenv("CLEARLEDGER_REGISTER_URL")
 	cfg.ClearLedgerAPIKey = os.Getenv("CLEARLEDGER_API_KEY")
+	acceptedVersions := csvEnv("BIDDER_OPENRTB_ACCEPTED_VERSIONS", cfg.AcceptedOpenRTBVersions)
+	if len(acceptedVersions) == 0 {
+		cfg.AcceptedOpenRTBVersions = []string{"2.6", "2.5"}
+	} else {
+		cfg.AcceptedOpenRTBVersions = openrtb.NormalizeVersions(acceptedVersions)
+		if len(cfg.AcceptedOpenRTBVersions) == 0 {
+			return cfg, fmt.Errorf("accepted_openrtb_versions must include at least one supported OpenRTB 2.x version")
+		}
+	}
+	outboundVersion := getenv("BIDDER_OPENRTB_OUTBOUND_VERSION", first(cfg.OpenRTBOutboundVersion, "2.6"))
+	cfg.OpenRTBOutboundVersion = openrtb.NormalizeOutboundVersion(outboundVersion)
+	if cfg.OpenRTBOutboundVersion == "" {
+		return cfg, fmt.Errorf("openrtb_outbound_version must be a supported OpenRTB 2.x version")
+	}
+	cfg.OpenRTBCompatProfile = normalizeToken(getenv("BIDDER_OPENRTB_COMPAT_PROFILE", first(cfg.OpenRTBCompatProfile, "openrtb_json")))
+	preservePartnerExtDefault := true
+	if preservePartnerExtSet {
+		preservePartnerExtDefault = cfg.PreservePartnerExt
+	}
+	cfg.PreservePartnerExt = boolEnv("BIDDER_OPENRTB_PRESERVE_PARTNER_EXT", preservePartnerExtDefault)
 	if cfg.Port == "" {
 		cfg.Port = "8080"
 	}
@@ -146,6 +182,21 @@ func Load(path string) (Config, error) {
 		}
 	}
 	return cfg, nil
+}
+
+func csvEnv(key string, fallback []string) []string {
+	value := strings.TrimSpace(os.Getenv(key))
+	if value == "" {
+		return append([]string(nil), fallback...)
+	}
+	out := []string{}
+	for _, part := range strings.Split(value, ",") {
+		part = strings.TrimSpace(part)
+		if part != "" {
+			out = append(out, part)
+		}
+	}
+	return out
 }
 
 func validateCampaign(c Campaign) error {
@@ -322,15 +373,19 @@ func (c Config) Summary() Summary {
 	dealSet := map[string]struct{}{}
 	placementSet := map[string]struct{}{}
 	summary := Summary{
-		OK:                true,
-		BuyerID:           c.BuyerID,
-		Seat:              c.Seat,
-		Currency:          c.Currency,
-		Campaigns:         len(c.Campaigns),
-		AuthRequired:      c.RequireAuth,
-		SignatureRequired: c.RequireSignature,
-		PublicEndpointSet: strings.TrimSpace(c.PublicEndpoint) != "",
-		OpenRTBEndpoint:   c.RegistrationEndpoint(),
+		OK:                     true,
+		BuyerID:                c.BuyerID,
+		Seat:                   c.Seat,
+		Currency:               c.Currency,
+		Campaigns:              len(c.Campaigns),
+		AuthRequired:           c.RequireAuth,
+		SignatureRequired:      c.RequireSignature,
+		PublicEndpointSet:      strings.TrimSpace(c.PublicEndpoint) != "",
+		OpenRTBEndpoint:        c.RegistrationEndpoint(),
+		OpenRTBVersions:        append([]string(nil), c.AcceptedOpenRTBVersions...),
+		OpenRTBOutboundVersion: c.OpenRTBOutboundVersion,
+		OpenRTBCompatProfile:   c.OpenRTBCompatProfile,
+		PreservePartnerExt:     c.PreservePartnerExt,
 	}
 	for _, campaign := range c.Campaigns {
 		if campaign.Enabled {

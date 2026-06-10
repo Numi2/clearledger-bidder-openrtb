@@ -96,7 +96,7 @@ The bidder detects the request version from `X-OpenRTB-Version` first, then body
 
 The decoder normalizes common compatibility fields into the local request model, including privacy values from `regs.ext`, `source.ext.schain`, `user.ext.consent`, `user.ext.eids`, floor aliases, native `version`/`ver`, and video/audio `placement`/`plcmt`. Response `ext.openrtb_compat` records detected version, outbound version, profile, normalized fields, and preserved extension keys.
 
-Readiness, state, certification, registration, and the ClearLedger lane harness all include the configured compatibility profile so operators can see which OpenRTB request versions are accepted and which response version is emitted.
+Configcheck, readiness, state, certification, registration, and the ClearLedger lane harness all include compatibility details so operators can see which OpenRTB request versions are accepted and which response version is emitted.
 
 ## Bid Responses
 
@@ -126,6 +126,8 @@ For native, `bid.adm` must be OpenRTB Native response JSON with a landing link a
 Controlled no-bid is `204 No Content`. Malformed OpenRTB is `400 Bad Request`.
 
 ## Quickstart
+
+Optional: copy `.env.example` to `.env` for Docker Compose or as a shell reference when exporting runtime variables.
 
 Run the local bidder and post a sample OpenRTB request:
 
@@ -252,7 +254,7 @@ go run ./cmd/certify \
 
 The harness checks readiness, ClearLedger identity and signature headers, valid bid response shape for video, audio, display, and native samples, controlled no-bid, malformed request rejection, and OpenRTB bid-response validation.
 
-Certification output is machine-readable JSON. It includes endpoint, contract name, buyer and seat identity, timeout, per-media HTTP status and latency, supported media, auth/signature coverage, readiness, controlled no-bid, malformed rejection, and maximum observed certification latency.
+Certification output is machine-readable JSON. It includes endpoint, contract name, buyer and seat identity, OpenRTB request version, endpoint compatibility details from `/readyz`, timeout, per-media HTTP status and latency, supported media, auth/signature coverage, readiness, controlled no-bid, malformed rejection, and maximum observed certification latency.
 
 ClearLedger runs its own certification before adding an endpoint to the runtime manifest.
 
@@ -289,7 +291,7 @@ The bidder keeps the OpenRTB hot path in-process. Campaign config is loaded and 
 
 Local spend and QPS reservations are only committed for bids the bidder returns. Controlled no-bids do not consume local QPS.
 
-Use `make bench` before changing auction logic. CI also runs `make bench-guard`, which fails if the reference video/PMP bid path crosses the configured regression threshold. The threshold is a regression tripwire, not a substitute for production load testing.
+Use `make bench` before changing auction logic. Treat benchmark results as local performance signal, not a required release gate or a substitute for production load testing.
 
 ## Support and Commercial Services
 

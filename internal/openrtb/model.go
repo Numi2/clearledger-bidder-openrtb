@@ -18,6 +18,16 @@ type BidRequest struct {
 	BCat   []string        `json:"bcat,omitempty"`
 	Ext    map[string]any  `json:"ext,omitempty"`
 	Raw    json.RawMessage `json:"-"`
+	Compat *CompatProof    `json:"-"`
+}
+
+type CompatProof struct {
+	DetectedVersion         string   `json:"openrtb_detected_version,omitempty"`
+	OutboundVersion         string   `json:"openrtb_outbound_version,omitempty"`
+	CompatProfile           string   `json:"compat_profile,omitempty"`
+	AcceptedRequestVersions []string `json:"accepted_request_versions,omitempty"`
+	NormalizedFields        []string `json:"normalized_fields,omitempty"`
+	PreservedExtKeys        []string `json:"preserved_ext_keys,omitempty"`
 }
 
 type Impression struct {
@@ -45,6 +55,8 @@ type Video struct {
 	MinDuration int      `json:"minduration,omitempty"`
 	MaxDuration int      `json:"maxduration,omitempty"`
 	Protocols   []int    `json:"protocols,omitempty"`
+	Placement   int      `json:"placement,omitempty"`
+	Plcmt       int      `json:"plcmt,omitempty"`
 	W           int      `json:"w,omitempty"`
 	H           int      `json:"h,omitempty"`
 }
@@ -54,6 +66,8 @@ type Audio struct {
 	MinDuration int      `json:"minduration,omitempty"`
 	MaxDuration int      `json:"maxduration,omitempty"`
 	Protocols   []int    `json:"protocols,omitempty"`
+	Placement   int      `json:"placement,omitempty"`
+	Plcmt       int      `json:"plcmt,omitempty"`
 }
 
 type Native struct {
@@ -106,9 +120,11 @@ type Device struct {
 }
 
 type User struct {
-	ID      string         `json:"id,omitempty"`
-	BuyerID string         `json:"buyeruid,omitempty"`
-	Ext     map[string]any `json:"ext,omitempty"`
+	ID      string           `json:"id,omitempty"`
+	BuyerID string           `json:"buyeruid,omitempty"`
+	Consent string           `json:"consent,omitempty"`
+	EIDs    []map[string]any `json:"eids,omitempty"`
+	Ext     map[string]any   `json:"ext,omitempty"`
 }
 
 type BidResponse struct {

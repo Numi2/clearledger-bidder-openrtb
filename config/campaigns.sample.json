@@ -4,6 +4,10 @@
   "buyer_id": "agency_bidder_1",
   "seat": "agency_seat_1",
   "currency": "USD",
+  "accepted_openrtb_versions": ["2.6", "2.5"],
+  "openrtb_outbound_version": "2.6",
+  "openrtb_compat_profile": "openrtb_json",
+  "preserve_partner_ext": true,
   "campaigns": [
     {
       "id": "campaign_video_1",

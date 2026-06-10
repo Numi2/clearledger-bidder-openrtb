@@ -2,7 +2,14 @@
   "buyer_id": "agency_bidder_1",
   "seat": "agency_seat_1",
   "endpoint": "https://agency-bidder.example.com/openrtb",
-  "protocol": "openrtb-2.6-json",
+  "protocol": "openrtb-2.x-json",
+  "openrtb_compat": {
+    "accepted_request_versions": ["2.6", "2.5"],
+    "outbound_version": "2.6",
+    "compat_profile": "openrtb_json",
+    "preserve_partner_ext": true
+  },
+  "contract": "clearledger.openrtb.approved_buyer.v1",
   "auth": {
     "bearer": true,
     "hmac_sha256": true,
@@ -14,8 +21,28 @@
       "X-ClearLedger-Buyer-Signature"
     ]
   },
-  "supported_media": ["video", "audio", "display", "native"],
+  "supported_media": ["audio", "display", "native", "video"],
   "no_bid": {
     "http_status": 204
+  },
+  "certification": {
+    "required": true,
+    "checks": [
+      "readyz",
+      "auth_signature",
+      "valid_video_bid",
+      "valid_audio_bid",
+      "valid_display_bid",
+      "valid_native_bid",
+      "clean_no_bid",
+      "malformed_rejected",
+      "proof_extensions"
+    ]
+  },
+  "operator_endpoints": {
+    "health": "https://agency-bidder.example.com/healthz",
+    "ready": "https://agency-bidder.example.com/readyz",
+    "metrics": "https://agency-bidder.example.com/metrics",
+    "state": "https://agency-bidder.example.com/statez"
   }
 }

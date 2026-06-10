@@ -10,11 +10,15 @@ import (
 
 func TestPayloadDerivesOpenRTBEndpointAndContractFields(t *testing.T) {
 	payload, err := Payload(config.Config{
-		PublicEndpoint:   "https://agency-bidder.example.com",
-		BuyerID:          "agency_bidder_1",
-		Seat:             "agency_seat_1",
-		RequireAuth:      true,
-		RequireSignature: true,
+		PublicEndpoint:          "https://agency-bidder.example.com",
+		BuyerID:                 "agency_bidder_1",
+		Seat:                    "agency_seat_1",
+		RequireAuth:             true,
+		RequireSignature:        true,
+		AcceptedOpenRTBVersions: []string{"2.6", "2.5", "2.4"},
+		OpenRTBOutboundVersion:  "2.5",
+		OpenRTBCompatProfile:    "legacy_exchange",
+		PreservePartnerExt:      true,
 		Campaigns: []config.Campaign{
 			{MediaTypes: []string{"video", "banner"}},
 			{MediaTypes: []string{"native", "video", "audio"}},
@@ -32,8 +36,15 @@ func TestPayloadDerivesOpenRTBEndpointAndContractFields(t *testing.T) {
 	if !reflect.DeepEqual(payload["supported_media"], []string{"audio", "display", "native", "video"}) {
 		t.Fatalf("supported media=%#v", payload["supported_media"])
 	}
-	if payload["contract"] != "clearledger.openrtb.approved_buyer.v1" {
+	if payload["protocol"] != "openrtb-2.x-json" || payload["contract"] != "clearledger.openrtb.approved_buyer.v1" {
 		t.Fatalf("contract=%#v", payload["contract"])
+	}
+	compat := payload["openrtb_compat"].(map[string]any)
+	if !reflect.DeepEqual(compat["accepted_request_versions"], []string{"2.6", "2.5", "2.4"}) ||
+		compat["outbound_version"] != "2.5" ||
+		compat["compat_profile"] != "legacy_exchange" ||
+		compat["preserve_partner_ext"] != true {
+		t.Fatalf("openrtb_compat=%#v", compat)
 	}
 	auth := payload["auth"].(map[string]any)
 	if auth["bearer"] != true || auth["hmac_sha256"] != true {
